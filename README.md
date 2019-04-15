@@ -8,7 +8,7 @@ This repository contains part of what I've done those days.
 * **libimbw**: library that implements a full duplex protocol to build covert channels proxed to TCP
 * **mikhail** connect hosts behind NATs
 * **cookie-tools**: steal web sessions from nearby Wi-Fi connected devices
-* **ptrace-tools**: inject commands on a ptraced telnet/ssh sessions (still working like a charm)
+* **ptrace-tools**: inject commands on ptraced telnet/ssh sessions (still working like a charm)
 * **rtpbreak**: sniff and reconstruct voice calls of IP-based phones (now part of Kali Linux)
 * **icopy**: datalink bridge that reads and writes packets between network interfaces
 
