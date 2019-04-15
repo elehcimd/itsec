@@ -1,0 +1,819 @@
+-[ BFi - English version ]----------------------------------------------------
+        BFi is an e-zine written by the Italian hacker community.
+        Full source code and original Italian version are available at:
+                http://bfi.s0ftpj.org/dev/BFi12-dev-07.tar.gz
+	French translation available at:
+	        http://bfi.s0ftpj.org/dev/fr/BFi12-dev-07-fr
+        English version translated by xenion <xenion@antifork.org>
+------------------------------------------------------------------------------
+
+
+
+==============================================================================
+---------------------[ BFi12-dev - file 07 - 15/08/2003 ]---------------------
+==============================================================================
+
+
+-[ DiSCLAiMER ]---------------------------------------------------------------
+        The whole stuff contained in BFi has informative and educational
+	purposes only. In no event the authors could be considered liable
+	for damages caused to people or things due to the use of code,
+	programs, pieces of information, techniques published on the e-zine.
+	BFi is a free and autonomous way of expression; we, the authors,
+	are as free to write BFi as you are free to go on reading or to stop
+	doing it right now. Therefore, if you think you could be harmed by
+	the topics covered and/or by the way they are in, * stop reading
+	immediately and remove these files from your computer * .
+	You, the reader, will keep to youself all the responsabilities about
+	the use you will do of the information published on BFi by going on.
+	You are not allowed to post BFi to the newsgroups and to spread
+	*parts* of the magazine: please distribute BFi in its original and
+	complete form.
+------------------------------------------------------------------------------
+
+
+-[ HACKiNG ]------------------------------------------------------------------
+---[ iMBW PR0T0C0L AND LiBRARY
+-----[ xenion <xenion@antifork.org>
+
+
+                     IMBW v1.0 protocol description and
+                           libimbw v2.8 analysis
+
+                        xenion <xenion@antifork.org>
+
+
+--[ Contents
+
+    1 - Introduction
+
+    2 - The IMBW protocol
+      2.1 - Offered services
+      2.2 - The header
+      2.3 - Transmission sequence and flow management
+      2.4 - Connection creation: the three way handshake
+      2.5 - Connection termination
+      2.6 - Timeouts
+      2.7 - Keepalive packets
+      2.8 - Packets size
+      2.9 - The protocol and the library plugins
+
+    3 - Library internals
+      3.1 - Connections
+      3.2 - Cryptography
+      3.3 - Error handling and reporting
+      3.4 - Plugins
+      3.5 - Used libraries
+  
+    4 - Library usage
+      4.1 - Functions, macros and extern vars
+      4.2 - Compiling your applications
+
+    5 - itools
+      5.1 - ishell
+          5.1.1 - examples
+      5.2 - ipipe
+          5.2.1 - examples
+      5.3 - inc
+          5.3.1 - examples
+
+    6 - Conclusion
+
+
+--[ 1 - Introduction
+
+This paper describes the IMBW protocol and one of its possible
+implementations, an userspace library that offers:
+
+  - handling of n simultaneous connections
+  - simmetric cryptography
+
+The protocol and the library born under the light of these
+considerations:
+
+  - TCP connections are always detectable, analyzing the traffic
+
+  - There are backdoors that work through TCP, ICMP, UDP... packets, but
+    leaving the theoric aspect they're very uncomfortable, bringing to a
+    waste of precious resources
+
+This project attempts to solve those problems: through the plugins we
+choose the low level functions that will be used in order to send or
+receive IMBW packets. Through them our IMBW connections will be entirely
+encapsulated in every kind of IP packet (for example: ICMP, UDP, TCP,
+IP OPTIONS).
+
+In other words, with the imbw library you can handle full-duplex
+connections through TCP, ICMP, UDP... packets, treating the connection
+transparently, as a TCP connection.
+
+
+--[ 2 - The IMBW protocol
+
+It's a transport level protocol (expect for the packet checksum: it must be
+handled by the used plugin) that proposes itself as an alternative to TCP.
+I've introduced this stupid protocol only because it's simpler, anyway
+it's also slower.
+
+
+--[ 2.1 - Offered services
+
+The IMBW protocol has been developed in order to offer a reliable
+bytestream on a not-reliable network offering a service:
+   
+  * reliable
+  * connection oriented
+
+Taking care of:
+
+  * accepting data from the application level
+  * breaking data into segments, the TPDU's name
+  * delivering them to the network level, eventually retransmitting them
+  * receiving segments from the network level
+  * delivering data, in order, to the application level
+
+
+--[ 2.2 - The header
+	
+Every segment is composed by:
+
+  * a header of 6 bytes
+  * the data to be delivered
+
+The header fields have these functions:
+
+  - flags(1):
+   - FIN: used to release the connection
+   - SYN: used during the setup phase of the connection
+   - PUSH: it means that the packet contains data
+   - ACK: it means that the ACK field contains an acknowledge number
+  - port(1): It identifies the End Points of the connection: the TSAP. 
+    Instead of other protocols as TCP and UDP the source port coincides to
+    the destination port.
+  - seq(2): sequence number of the packet
+  - ack(2): sequence number of the confirmed packet
+
+
+--[ 2.3 - Transmission sequence and flow management
+ 
+IMBW is a stop-and-wait (or one byte sliding window) protocol, let's see
+the features:
+
+  - Stream Orientation: when two applications transfer data (bytestream),
+    the flow in the destination machine is given to the receiving
+    application exactly as it has been created by the source machine
+
+  - Full-duplex Connection: the connection permits a concurrent data
+    flow in every direction, without an apparent interaction
+
+The receiver must be able to detect duplicate or lost segments through a
+very important technique known as acknowledgement with retransmission.
+This technique foresees the receiver to send an ack message to the sender
+every received packet. The sender holds a copy of every sent packet and
+removes it from the transmission buffer only after the reception of the
+ack. The source user, after the transmission of a packet, waits to receive
+the ack before sending the next one starting a timer used for timeouts
+handling, and after its expiration, if no response has been received, it
+resends the same packet. Protocols like this, where the sender waits a
+confirmation ack, are called PAR (Positive Ack with Retransmission) or
+ARQ (Automatic Repeat Request).
+
+Sender (infinite loop, [seq] is the sequence field of a packet):
+
+  1. n_seq = X
+  2. n_seq = n_seq + 1
+  3. it builds a packet and copies n_seq into [seq]
+  5. it delivers the data packet to the transport level
+  6. it resets the timer
+  7. it waits for an event:
+    - expired timer: goto 5.
+    - arrives an (empty) valid ack packet: goto 2.
+
+
+Receiver (infinite loop, [seq] is the sequence field of a packet):
+
+  1. n_exp = X
+  2. n_exp = n_exp+1
+  3. it waits for an event:
+    * arrives a valid segment from transport level:
+     - if ([seq] == n_exp):
+      * it extracts the packet
+      * it delivers (if present) transported data to the application level
+        level
+     - it sends an ack packet (empty)
+     - goto 2.
+    * arrives a non valid packet: goto 3.
+
+
+--[ 2.4 - Connection creation: the three way handshake
+
+It needs to exchange three packets:
+
+1) the client starts the connection (active open) sending a packet with 
+   only the header where:
+
+     * flags : SYN
+     * seq : initial sequence number of the client
+     * ack : 0
+
+2) The server responds (passive open) sending a packet with only the header
+   where:
+
+     * flags : SYN
+     * seq : initial sequence number of the server
+     * ack : initial sequence number of the client
+
+3) The client responds sending a packet with only the header where:
+
+     * flags : ACK
+     * seq : initial sequence number of the client
+     * ack : initial sequence number of the server
+
+
+--[ 2.5 - Connection termination
+
+It needs to exchange two packets:
+
+1) The client starts the disconnection (active close) sending a packet
+   composed by the only header where:
+
+     * flags : FIN
+     * seq : X's sequence number
+     * ack : 0
+
+2) The other ES responds (passive close) sending a packet composed by the
+   only header where:
+
+     * flags : ACK
+     * seq : 0
+     * ack : X's sequence number
+
+Instead of TCP half-closed connections are not handled and this causes a
+drastic simplification of the protocol.
+
+
+--[ 2.6 - Timeouts
+
+The reception of a packet from the other End System is confirmed through an
+ack packet. The retransmission is handled through a timer, after n 
+retransmissions the connection fails.
+
+
+--[ 2.7 - Keepalive packets
+
+When the connection inactivity timeout exipres, a PUSH packet with the data
+field null is sent. This implies an ack packet from the other End System.
+
+
+--[ 2.8 - Packets size
+
+IP packet fragmentation should be a level 3 (network) service, anyway we
+need to avoid it. This problem will be solved in a future version of the
+protocol, considering the userspace resources.
+
+Let's see what is the MTU and the Path MTU, the cause of the problem: a
+DataLink level characteristic is the maximum limit of the frame that we can
+transmit. This limit depends by the specific protocol details, it isn't
+only or always only a characteristic of the transport.
+
+For example, CSMA/CD (IEEE 802.3) has a data limit of 1500 bytes. This
+limit is called MTU (Maximum Transmission Unit). Packets larger than the
+MTU must be fragmented.
+
+  +-------------------------+-------+
+  | Interface               |  MTU  |
+  +-------------------------+-------+
+  | Hyperchannel            | 65535 |
+  | 16 Mbits/sec Token Ring | 17914 |
+  | 4 Mbits/sec Token Ring  | 4464  |
+  | FDDI                    | 4352  |
+  | Ethernet                | 1500  |
+  | PPP                     | 1500  |
+  | X.25                    | 576   |
+  +-------------------------+-------+
+
+In the communication between two stations through a lot of networks (like
+internet) the minimum MTU of the path is called Path MTU. This value
+estabilishes the maximum size of a packet and over this size all packets
+will be fragmented. Beware, the Path MTU is not symmetrical and it may be
+different in the two route directions.
+
+There's an IP protocol characteristic that is useful for our purposes: all
+computers, as defined by the IP protocol, must be able to accept
+datagrams of 576 bytes, fragmented or not. All computers that want to
+exceed this limit must assure themselves the receiver is capable of
+receiving them. This allows us to send data in every situation, the
+problem is to define the maximum size.
+
+At the end, there isn't a perfect value, 1000-1400 should not cause
+problems (but everything will appear really slow). If you experiment
+this situation:
+
+  - succesful connection creation
+  - connection lost, while transferring data
+
+the reason may be the too high value
+
+
+--[ 2.9 - The protocol and the library plugins
+
+The IMBW packets aren't directly sent or received from the network
+interface:
+
+  - when an IMBW packet must be delivered, a plugin exported function is
+    called. This function encapsules it into a transport level packet,
+    using the added header in order to handle the IMBW packet checksum.
+    After doing some things it sends it through the network interface.
+
+  - when something is read from the network interface, a plugin exported
+    function is called. After some checks (checksum,... ), if it looks as
+    an IMBW encapsulated packet, the envelope is removed and the function
+    returns the IMBW packet.
+
+An example:
+
+  |--------------------------|
+  | IP header                |
+  |--------------------------|
+  | ICMP header              |
+  |--------------------------|
+  | signature (optional)     |    
+  |--------------------------|
+  | IMBW header              | 
+  |--------------------------|
+  | IMBW payload             |
+  |--------------------------|
+
+More details in 3.4.
+
+
+--[ 3 - Library Internals
+
+The IMBW stack is managed through an interface composed by some macros,
+functions and exported structs. Internally two threads are used:
+
+  - [imbw_main]:
+    it analyzes the network traffic, looking for IMBW packets, and
+    handles the outgoing data flow.
+
+  - [imbw_timeouts]:
+    it handles everything related to packet timeouts: retransmission 
+    and timed out connections.
+
+For simplicity, since now on we'll call these two threads and the other
+used resources "IMBW stack".
+
+
+--[ 3.1 - The Connections
+
+The connections are handled in a transparent way through the so called
+local sockets (or Unix domain sockets): a communication mechanism
+very similar to the pipes, but without the problem of the
+unidirectionality of the data flow. Internally they are represented
+with an imbw_connection_list struct list.
+
+The pair of connected sockets used in order to handle every connection
+is internally created where necessary. We can write and read on both
+of them, one is internally used by the library, the other one is only
+used by the application, and we've that:
+
+  - when a packet is received and its connection recognized (port, seq
+    number, src ip, dst ip) an ack packet is sent back and the data
+    component (if present) flies with a write(fd[0],bufx,lenx) to the
+    application that will catch it through a read(fd[1],bufz,lenz).
+
+  - when the application sends something, calling a write(fd[1], bufy,
+    leny), the [imbw_main] thread receives the data through a read(fd[0],
+    bufk, lenk) and sends it to the other End System. The channel (in this
+    direction) is blocked until an ack packet is received.
+
+It's possible to create two connection types:
+
+  - outgoing: they are created through the imbw_connect() function.
+
+  - listening: they are created through the imbw_listen() function and
+    accepted through the imbw_accept() function. There isn't a queue of
+    pending connections, only the first request is handled. When the
+    connection reaches the ESTABILISHED or the DEAD state (in case of
+    timeout) a new listening connection must be created. (DEAD connections
+    are removed by the [imbw_main] thread)
+
+
+--[ 3.2 - Cryptography
+
+Blowfish is a symmetric block cipher that can be used as a drop-in 
+replacement for DES or IDEA. It takes a variable-length key, from 32 bits
+to 448 bits, making it ideal for both domestic and exportable use. Blowfish
+was designed in 1993 by Bruce Schneier as a fast, free alternative to
+existing encryption algorithms. Since then it has been analyzed
+considerably, and it is slowly gaining acceptance as a strong encryption
+algorithm. It is quite a bit faster than DES, and much faster than IDEA or
+RC2. Blowfish isn't patented and it's public.
+
+Connections aren't ciphered, only the channeled data is ciphered. Every
+connection is handled with its own blowfish key. The crypto support does
+not protect against replay attack and does not offer any kind of
+authentication.
+
+
+--[ 3.3 - Error handling and reporting
+
+There are two different error types:
+
+  - internal errors: they occur in [imbw_main], [imbw_timeouts] causing the
+    IMBW stack death (the two threads and all the connections are closed).
+    The error notify is managed internally and it's recognizable through
+    the imbw_check_errors() function. All the library interface functions
+    call internally the imbw_check_errors() function, if there is a problem
+    they notify it through the return value.
+
+  - external errors: they occur in the library interface functions and they
+    refer to a single connection (excluding imbw_init()), causing a forced
+    close. The error notify is managed through the return value.
+
+
+--[ 3.4 - Plugins
+
+The plugins are used in order to handle at low level the packet
+transmission and reception, making libimbw adapting itself to the
+situation. There are two kind of plugins:
+
+  - SEND: it handles only the packet transmission
+  - RECV: it handles only the packet reception
+
+this function is exported only by RECV plugins:
+
+  IMBW_G_INLINE_FUNC int imbw_plugin_XXX_recv(const u_char * packet,
+                                              u_int32_t length);
+						  
+It's used only by the [imbw_main] thread, working as an intermediary
+between the pcap library and the plugin. It recognizes incoming packets,
+loading them into an imbw_packet_struct struct.
+
+This function is exported only by SEND plugins:
+
+  IMBW_G_INLINE_FUNC int imbw_plugin_XXX_send(u_int32_t saddr,
+                                              u_int32_t daddr,
+                                              unsigned char *payload,
+                                              u_int32_t length);
+
+It's used by [main], [imbw_main], [imbw_timeouts] threads. Its sends a
+single packet.
+
+These functions are exported by all plugins:
+
+   int             imbw_plugin_XXX_init();
+
+It initializes the plugin, reserving the requested resources.
+
+   int             imbw_plugin_XXX_destroy();
+      
+It frees the memory reserved by the plugin resources.
+
+All the plugins are built-in, only 2 are used at runtime: one of type SEND
+and the other one of type RECV.
+
+In order to speed up the packet reception all the transmitted packets can
+be signed (a string before the IMBW header). This also ensures ourselves
+that anybody else can estabilish connections (assuming obviously that 
+anybody else knows the signature).
+
+
+--[ 3.5 - Used libraries
+
+  It uses three libraries:
+
+    - libpthread (LinuxThreads)
+    - libpcap
+
+      it needs root privileges to open the capturing socket.. this is
+      a big disadvantage.
+
+    - libcrypto (openssl)
+
+
+--[ 4 - Library usage
+
+This version works only under linux.. sigh. The library can attach only one
+network interface at a time. Yes, they look as problems, not features :P
+
+
+--[ 4.1 - Functions, macro and extern vars
+
+Summary
+
+  extern imbw_plugin_struct imbw_plugins[];
+  extern imbw_opt_struct imbw_opt;
+  extern char    *imbw_errors_buf;
+  extern pthread_mutex_t imbw_ipfromlong_mutex;
+ 
+  int             imbw_init();
+  void            imbw_destroy();
+  int             imbw_listen(u_int16_t port, void *passphrase,
+                              u_int32_t len);
+  int             imbw_accept(int fd);
+  int             imbw_connect(u_int32_t daddr, u_int16_t port, int t,
+                                  void *passphrase, u_int32_t len);
+  u_int32_t       imbw_getlongbyname(char *host);
+  IMBW_G_INLINE_FUNC int imbw_check_errors();
+  int             imbw_thread_add(pthread_t id, char *name, u_char type);
+  int             imbw_thread_create(void *(*start_routine) (void *),
+                                        void *arg, int detached);
+  void            imbw_thread_remove_me();
+  int             imbw_thread_sigset_block(int n, ...);
+  int             imbw_thread_sigset_unblock(int n, ...);
+  void            imbw_close_fds_expect012(int fd);
+  IMBW_G_INLINE_FUNC void imbw_debug(char *f, int l, char *pattern, ...);
+  char           *imbw_ipfromlong(unsigned long s_addr);
+
+Description
+
+  imbw_init() initializes the structs and threads internally handled, if
+  there is an error the return value is -1. This function internally
+  calls the IMBW_SIGSET_BLOCK macro.
+
+  imbw_destroy() frees the resources used by the library. It handles the
+  disconnections of the connections in ESTABILISHED and LISTEN state.
+
+  imbw_listen() creates a connection in listening state on the port port.
+  The return value is the connection associated fd, if an error occurs
+  the return value is -1. The connection key of length len is pointed by
+  passphrase.
+
+  imbw_accept() accepts a connection created through the imbw_listen()
+  function. The thread is blocked until a connection request arrives. If an
+  error occurs the return value is -1.
+
+  imwb_connect() attemts to estabilish a connection to daddr:port. t is the
+  timeout and is internally handled. If t == 0, the timeout will be
+  maximized to IMBW_CONNECTION_TIMEOUT. The connection key of length len is
+  pointed by passphrase. -1 is returned if an error occurs, otherwise the
+  return value is a descriptor referencing the socket.
+
+  imbw_check_errors() checks the IMBW stack status. All the library
+  interface functions call internally the imbw_check_errors() function. If
+  an internal error occurs the return value is 1, otherwise 0.
+
+  imbw_close_fds_expect012() closes all fds except 0,1,fd.
+
+  imbw_getlongbyname() resolves the string pointed by host (an hostname or
+  an IPv4 address in standard dot notation).
+
+  imbw_ipfromlong() returns a string statically allocated that points to
+  the IPv4 s_addr in standard dotted notation. It internally uses the
+  inet_ntoa() function. To use these two functions is necessary a lock of
+  the imbw_ipfromlong_mutex mutex. This function is used by the library 
+  only if the debugging is enabled.
+
+  IMBW_SIGSET_BLOCK blocks some signals sent to the thread.
+  IMBW_SIGSET_UNBLOCK unblocks some signals sent to the thread.
+
+  IMBW_DEBUG is used to trace the execution of the registered threads
+  through imbw_thread_add(). logfile ('./imbw.main-pid.log') is opened with
+  flags "a+" through the imbw_init() function. 
+
+  imbw_thread_add() adds a thread to the list of the registered threads.
+  type is the type of the thread:
+    - IMBW_NOTRELATED: library (and plugin) threads
+    - IMBW_RELATED: other threads (main, ..)
+  Useful only for debugging.
+
+  imbw_thread_remove_me() removes the current thread from the thread list.
+
+  imbw_close_log() closes the logfile. It's called internally by the
+  imbw_destroy() function.
+
+  extern imbw_opt_struct imbw_opt: you can setup the library behaviour
+  initializing this struct: 
+
+  typedef struct {
+    u_int16_t       pmsize;
+    u_int16_t       packet_attempts;
+    u_int16_t       packet_timeout;
+    u_int16_t       keepalive_timeout;
+    char           *dev;
+    u_int32_t       addr;
+    char           *sign;
+    int             plugin_send;
+    int             plugin_recv;
+    char           *plugin_send_options;
+    char           *plugin_recv_options;
+  } imbw_opt_struct;
+
+  pmsize is the MTU less the IMBW header size (if the SEND plugin doesn't
+  add other stuff). after packet_attempts retransmission attempts the
+  connection is considered lost. the ack timeout is packet_timeout.
+  keepalive_timeout is the connection inactivity timeout. dev the network
+  interface attached by the IMBW stack. Through addr we can force a local
+  address (ignoring the network interface address). sign points to the
+  signature string. The SEND plugin id is plugin_send, the RECV plugin id
+  is plugin_recv. plugin_send_options and plugin_recv_options point to the
+  plugin parameters.
+
+  extern imbw_plugin_struct imbw_plugins[]: it references the available
+  plugins. Take a look to itools...
+
+  LIBIMBW_VER identifies the libimbw version
+
+  On error, imbw_errors_buf always points to a static string with a
+  description. If there are more than one thread handled by the
+  application, you won't be able to identify which one caused the error.
+
+  To use inet_ntoa or imbw_ipfromlong() you must lock the
+  imbw_ipfromlong_mutex mutex.
+
+
+--[ 4.2 - Compiling your applications
+
+We need 3 files: imbw.a, libimbw-config, imbw.h:
+    
+  cc `../libimbw/libimbw-config --cflags` \
+     -I../libimbw \
+     `../libimbw/libimbw-config --defines` \
+     file.c \
+     imbw.a \
+     imbw_packet_x.a \
+     `../libimbw/libimbw-config --libs` \
+     -o file
+
+
+--[ 5 - itools
+
+This is a little tools suite, working with libimbw.
+
+
+--[ 5.1 - ishell
+
+it's an internet ``super-server'' (like inetd) and allows the remote
+execution of commands (like rsh). The command list associated with their
+ports and the 'special' port are defined statically in ishell.h .
+Yes, it looks like a backdoor :)
+
+
+--[ 5.1.1 - examples
+
+1)  ./ishell
+
+    displays the command syntax and the available plugins.
+
+2)  ./ishell -L
+ 
+    displays the command list associated with their ports.
+
+3)  ./ishell -i eth0 -S 43302 -p sventek -G2:3
+
+    it listens on the eth0 network interface, the packets signature is
+    "43302" and the passphrase is sventek. Two plugins are used: #2 (SEND
+    type) and #3 (RECV type). If from the plugin list they are:
+
+      [..]
+      02 send sendtcp v0.1, opt: [SRCPORT:DSTPORT:FLAGS]
+      03 recv recvtcp v0.1, opt: []
+      [..]
+
+    then every sent or received IMBW packet is encapsulated into a TCP
+    packet.
+
+4)  ./ishell -i eth0 -S 43302 -p sventek -G2:1 -a 2083:21:2
+
+    it listens on the eth0 network interface, the packets signature is
+    "43302" and the passphrase is sventek. Two plugins are used: #2 (SEND
+    type) and #1 (RECV type). If from the plugin list they are:
+
+      [..]
+      01 recv recvicmp v0.1, opt: []
+      02 send sendtcp v0.1, opt: [SRCPORT:DSTPORT:FLAGS]
+      [..]
+
+    then all sent packets will be encapsulated into TCP packets and all
+    received packets into ICMP packets. At the end, The -A option is used:
+    the TCP packets will have src port 2083, dstport 21 and 2 (SYN) as
+    flags.
+
+5)  ./ishell -w 100 -i ppp0 -S 43302 -p sventek -G2:1
+ 
+    it listens on the ppp0 network interface with the same signature,
+    passphrase and used plugins of the last example. When executed, it
+    wailts 100 seconds and than does his things. The pause is done because
+    we must be sure that the Point-to-Point link exists... useful if started
+    in an automated way after the boot phase, before the network devices
+    initialization.
+
+
+--[ 5.2 - ipipe
+
+it's a transport layer bridge (IMBW/TCP).
+
+
+--[ 5.2.1 - examples
+
+1)  ./ipipe -D -s any:23 -d 192.168.1.3:0 -e 2 -i eth0 -S 43302 \
+    -p sventek -G2:3
+
+    the pipe type is defined by the -e option, you can choose between:
+
+      0: IMBW > IMBW
+      1: IMBW > TCP
+      2:  TCP > IMBW
+      3:  TCP > TCP
+
+    in our example the TCP port 23 will listen for connections on all 
+    interfaces. When a connection is estabilished, an IMBW connection is
+    attempted towards the 192.168.1.3 addr, IMBW port 0 (the IMBW ports are
+    comprised between 0 and 255). The exchange of IMBW packets is done only
+    through the eth0 network interface, the packets signature is "43302",
+    the passphrase is sventek and the plugins #2 and #3 are used. The -D
+    option is used in order to dump all connections in files in current 
+    directory.
+
+2)  ./ipipe -s any:67 -d 192.168.1.3:6667 -e 1 -i ppp0 \
+      -S 43302 -p sventek -G2:3
+
+    we want to allow internet users to use a private ircd, reachable only
+    from the internal lan. It listends on the IMBW port 67 on the ppp0
+    network interface. Yes any is ignored... if the pipe type is 0 or 1 the
+    source address isn't used: every connection attempt from the ppp0
+    interface towards the IMBW port 67 is considered valid.
+
+
+--[ 5.3 - inc
+
+it establishes an IMBW connection and acks with the other ES through 
+stdin/stdout.
+
+   
+--[ 5.3.1 - examples
+
+1)  ./inc -d 192.168.1.10:0 -i eth0 -S 43302 -p sventek -G2:3
+
+    on 192.168.1.10 ishell is running, the IMBW port 0 is associed with the
+    execution of '/bin/sh -i'. something like an IMBW bindshell ;)
+
+2)  echo 'cat /etc/passwd' | ./inc -d 192.168.1.10:254 \
+    -i eth0 -S 43302 -p sventek -G2:3
+
+    on 192.168.1.10 ishell is running, the IMBW port 254 is the 'special' 
+    one that allows the remote exectuion of commands: As soon as the
+    connection is estabilished a stream of bytes ending with '\n' is
+    expected (the command) and than it is executed. The proposed example
+    executes on the remote host the 'cat /etc/passwd' command, visualizing
+    the output on stdout.
+
+6 - Conclusion
+
+libimbw may be used in order to develop next generation backdoors and other
+complex stuff, easily: thanks to the plugin subsystem, this library can
+estabilish full-duplex connections stealthly through firewalls and Intrusion
+Detection Systems. 
+
+At last, many thanks to antifork.org guys, their passive contribute through
+the cvs stuff was great! and a big thanks to darkangel who supported this
+project with patience and knowledge, making also a first english translation
+of this paper.
+
+This is all, have fun and send me patches and new plugins! every contribute
+will be appreciated ;-)
+
+uh, IMBW stands for 'I Might Be Wrong', a RH song.
+
+EOF
+
+
+
+-[ WEB ]----------------------------------------------------------------------
+
+        http://bfi.s0ftpj.org      [main site - IT]
+	http://bfi.cx              [mirror - IT]
+        http://bfi.freaknet.org	   [mirror - AT]
+	http://bfi.anomalistic.org [mirror - SG]
+
+
+-[ E-MAiL ]-------------------------------------------------------------------
+
+	bfi@s0ftpj.org
+
+
+-[ PGP ]----------------------------------------------------------------------
+
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+Version: 2.6.3i
+mQENAzZsSu8AAAEIAM5FrActPz32W1AbxJ/LDG7bB371rhB1aG7/AzDEkXH67nni
+DrMRyP+0u4tCTGizOGof0s/YDm2hH4jh+aGO9djJBzIEU8p1dvY677uw6oVCM374
+nkjbyDjvBeuJVooKo+J6yGZuUq7jVgBKsR0uklfe5/0TUXsVva9b1pBfxqynK5OO
+lQGJuq7g79jTSTqsa0mbFFxAlFq5GZmL+fnZdjWGI0c2pZrz+Tdj2+Ic3dl9dWax
+iuy9Bp4Bq+H0mpCmnvwTMVdS2c+99s9unfnbzGvO6KqiwZzIWU9pQeK+v7W6vPa3
+TbGHwwH4iaAWQH0mm7v+KdpMzqUPucgvfugfx+kABRO0FUJmSTk4IDxiZmk5OEB1
+c2EubmV0PokBFQMFEDZsSu+5yC9+6B/H6QEBb6EIAMRP40T7m4Y1arNkj5enWC/b
+a6M4oog42xr9UHOd8X2cOBBNB8qTe+dhBIhPX0fDJnnCr0WuEQ+eiw0YHJKyk5ql
+GB/UkRH/hR4IpA0alUUjEYjTqL5HZmW9phMA9xiTAqoNhmXaIh7MVaYmcxhXwoOo
+WYOaYoklxxA5qZxOwIXRxlmaN48SKsQuPrSrHwTdKxd+qB7QDU83h8nQ7dB4MAse
+gDvMUdspekxAX8XBikXLvVuT0ai4xd8o8owWNR5fQAsNkbrdjOUWrOs0dbFx2K9J
+l3XqeKl3XEgLvVG8JyhloKl65h9rUyw6Ek5hvb5ROuyS/lAGGWvxv2YJrN8ABLo=
+=o7CG
+-----END PGP PUBLIC KEY BLOCK-----
+
+
+==============================================================================
+-----------------------------------[ EOF ]------------------------------------
+==============================================================================
+

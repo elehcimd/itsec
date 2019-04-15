@@ -10,5 +10,6 @@ This repository contains part of what I've done those days.
 * **cookie-tools**: steal web sessions from nearby Wi-Fi connected devices
 * **ptrace-tools**: inject commands on a ptraced telnet/ssh sessions (still working like a charm)
 * **rtpbreak**: sniff and reconstruct voice calls of IP-based phones (now part of Kali Linux)
+* **icopy**: datalink bridge that reads and writes packets between network interfaces
 
 As always, at your own risk: have fun and be responsible!
