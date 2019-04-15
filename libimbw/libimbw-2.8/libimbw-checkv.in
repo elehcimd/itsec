@@ -1,0 +1,31 @@
+#!/bin/sh
+
+WGET="wget"
+THISV="@VERSION@"
+
+echo ======================================================================
+$WGET http://xenion.antifork.org/libimbw/LASTV 
+echo ======================================================================
+echo
+if [ ! 0 -eq $? ]; then exit; fi
+
+LASTV=$(cat LASTV)
+rm -f LASTV
+
+if [ "$LASTV" = "$THISV" ]; then 
+  echo "There isn't a newer version, bye!" 
+  echo
+  exit
+fi
+
+read -p The\ latest\ version\ is\ "$LASTV",\ wget\ it?\ [y/n]:\   x
+echo
+
+if [ "$x" = "y" ]; then
+  $WGET http://xenion.antifork.org/libimbw/libimbw-${LASTV}.tar.gz
+  if [ ! 0 -eq $? ]; then exit; fi
+fi
+
+echo "bye!"
+echo
+

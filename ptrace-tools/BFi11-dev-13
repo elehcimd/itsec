@@ -1,0 +1,322 @@
+==============================================================================
+--------------------[ BFi11-dev - file 13 - 02/11/2002 ]----------------------
+==============================================================================
+
+
+-[ DiSCLAiMER ]---------------------------------------------------------------
+        Tutto il materiale contenuto in BFi ha fini eslusivamente informativi
+        ed educativi. Gli autori di BFi non si riterranno in alcun modo
+        responsabili per danni perpetrati a cose o persone causati dall'uso
+        di codice, programmi, informazioni, tecniche contenuti all'interno
+        della rivista.
+        BFi e' libero e autonomo mezzo di espressione; come noi autori siamo
+        liberi di scrivere BFi, tu sei libero di continuare a leggere oppure
+        di fermarti qui. Pertanto, se ti ritieni offeso dai temi trattati
+        e/o dal modo in cui lo sono, * interrompi immediatamente la lettura
+        e cancella questi file dal tuo computer * . Proseguendo tu, lettore,
+        ti assumi ogni genere di responsabilita` per l'uso che farai delle
+        informazioni contenute in BFi.
+        Si vieta il posting di BFi in newsgroup e la diffusione di *parti*
+        della rivista: distribuite BFi nella sua forma integrale ed originale.
+------------------------------------------------------------------------------
+
+
+-[ HACKiNG ]------------------------------------------------------------------
+---[ PTRACE(2) F0R FUN AND PR0FiT
+-----[ xenion <xenion@acidlife.com>
+
+
+
+Author: xenion
+
+                                            ptrace(2) for fun and profit
+------------------------------------------------------------------------
+
+0x0 ptrace(2), first steps
+0x1 Reading and writing child memory 
+0x2 read(2)/write(2) reference
+0x3 Logging the contents of inbound/outbound telnet/ssh sessions
+0x4 Injecting commands on a ptraced telnet/ssh session
+0x5 Bindshell, the last stage of delirium
+0x6 References
+
+
+
+0x0 ptrace(2), first steps
+------------------------------------------------------------------------
+
+ptrace(2) e' una syscall che offre funzionalita' di debugging/tracing:
+Permette di osservare e controllare l'esecuzione di un processo,
+modificarne/leggerne l'immagine in memoria ed i registri.
+Ecco il prototipo della funzione a userspace:
+
+    long  int ptrace(enum __ptrace_request request, pid_t pid,
+    void * addr, void * data)
+
+Evito di dire con altre parole quanto viene gia' spiegato chiaramente 
+nella Man page, finirei col fare traduzioni grossolane ed inutili :)
+Vediamo invece come usare la ptrace(2) con un piccolo esempio: Vogliamo
+vedere che syscall vengono utilizzate a runtime da un qualsiasi 
+eseguibile: <ptrace/scm.c>.
+
+Ora siamo in grado di:
+- agganciare un processo
+- mantenerne il controllo loggando
+  - le syscall chiamate
+  - lo stato dei registri
+
+
+
+0x1 Reading and writing child memory
+------------------------------------------------------------------------
+
+Mediante richieste di tipo PTRACE_PEEKTEXT e PTRACE_POKETEXT possiamo
+rispettivamente leggere o scrivere una WORD (quindi 4 bytes su una 
+box Linux 32-bit). Scomodo.. Vediamo come implementare un paio di funzioni 
+che ci permettono di fare queste stesse operazioni su buffer di dimensioni 
+maggiori:
+
+
+#define WORD_SIZE 4
+
+// 'x' viene approssimato per eccesso ad un multiplo di 'y'
+#define COUNT_OK(x, y) (##x % ##y != 0 ? ##x+(##y - (##x % ##y)) : ##x)
+
+// 'x' viene approssimato per difetto ad un multiplo di 'y'
+#define LEN_OK(x, y) (##x-(##x % ##y))
+
+
+/*
+Legge dal processo 'pid' da 'src' 'count' bytes, andando quindi
+a scrivere sul buffer puntato da 'dest', buffer di 'len' bytes.
+*/
+int
+memread(pid_t pid, unsigned char *dest, unsigned char *src, long count,
+        long len)
+{
+    long            off;
+    long            res;
+
+    if (count < 0 || len < 0)
+        return (-1);
+
+    count = COUNT_OK(count, WORD_SIZE);
+    len = LEN_OK(len, WORD_SIZE);
+
+    if (len < count)
+        return -1;
+
+    for (off = 0; off < count; off += WORD_SIZE) {
+        res = ptrace(PTRACE_PEEKTEXT, pid, src + off, 0);
+        if (errno > 0)
+            return -1;
+        else
+            memcpy(dest + off, &res, WORD_SIZE);
+    }
+
+    return count;
+}
+
+/*
+Scrive sul processo 'pid' in 'src' 'count' bytes, letti
+dal buffer puntato da 'dest', buffer di 'len' bytes.
+*/
+int
+memwrite(pid_t pid, unsigned char *dest, unsigned char *src, long count,
+         long len)
+{
+    long            off;
+    long            res;
+
+    if (count < 0 || len < 0)
+        return (-1);
+
+    count = COUNT_OK(count, WORD_SIZE);
+    len = LEN_OK(len, WORD_SIZE);
+
+    if (len < count)
+        return -1;
+
+    for (off = 0; off < count; off += WORD_SIZE) {
+        memcpy(&res, src + off, WORD_SIZE);
+        if (ptrace(PTRACE_POKETEXT, pid, dest + off, res) < 0)
+            return -1;
+    }
+
+    return count;
+}
+
+
+
+0x2 read(2)/write(2) reference
+------------------------------------------------------------------------
+
+Ci occorre conoscere con chiarezza parametri e return value di queste
+due syscall, ci serviranno in seguito:
+
+   read(2):
+
+        read up to count bytes from file fd into buffer *buf:
+
+        arg:
+          eax             3
+          ebx             file descriptor
+          ecx             ptr to input buffer
+          edx             buffer size, max. count of bytes to receive
+        return:
+          eax             no. of bytes received
+        errors:
+          eax             EAGAIN, EBADF, EFAULT, EINTR, EINVAL, EIO, EISDIR
+        source:
+          fs/read_write.c
+
+
+   write(2):
+
+        write (up to) count bytes of data from *buf to file fd:
+
+        arg:
+          eax      4
+          ebx      file descriptor
+          ecx      ptr to output buffer
+          edx      count of bytes to send
+        return:
+          eax      no. of sent bytes (if POSIX conforming f.s.)
+        errors:
+          eax      EAGAIN, EBADF, EFAULT, EINTR, EINVAL, EIO, ENOSPC, EPIPE
+        source:
+          fs/read_write.c
+
+
+
+0x3 Logging the contents of inbound/outbound telnet/ssh sessions
+------------------------------------------------------------------------
+
+Con ptrace(2) possiamo agganciarci ad un qualsiasi processo esistente (se
+siamo root), possiamo quindi vedere cosa passa per la write(2) o la read(2)
+senza ricorrere ad un modulo a kernelspace: Questo ci permette di loggare
+le sessioni telnet/ssh!
+<ptrace/idioteque.c> serve esattamente a questo.. fixati alcuni bug presenti
+nella prima release pubblica.
+
+
+
+0x4 Injecting commands on a ptraced telnet/ssh session
+------------------------------------------------------------------------
+
+Perche limitarsi a loggare? Possiamo modificare o aggiungere
+dati nei buffer di I/O, questo ci permette indirettamente
+di eseguire codice arbitrario sulla box.. vediamo come:
+
+Quando l'utente esegue un qualche tipo di operazione sulla shell
+inserisce una sequenza di caratteri seguita da '\n', sequenza che viene
+letta dal client ssh/telnet attraverso un fd. Se la sessione e'
+linebuffered sara' sufficiente una sola read(2), una per
+carattere nel caso fosse unbuffered.. ci bastera' quindi aspettare una read(2)
+da un certo fd che abbia come ultimo byte letto '\n' oltre il quale
+inseriremo i nostri comandi. Torniamo alla read(2):
+Come sappiamo, viene mandato un segnale di SIGTRAP prima di eseguire
+la syscall ed un'altro appena dopo.. i bytes letti saranno disponibili
+solo al secondo stop. Andremo quindi a scrivere partendo dalla posizione
+ecx+eax, ricordandoci di fixare eax. Dimensione dei buffer di I/O:
+
+| client          | length |
++-----------------+--------+
+| OpenSSH_3.2.3p1 | 16384  |
++-----------------+--------+
+| telnet          | 8192   |
++-----------------+--------+
+
+Lo spazio e' limitato, ma sufficiente per qualsiasi cosa, come vedremo 
+in seguito :)
+Una volta aggiornato il registro eax non occorre fare altro se non
+rilasciare il controllo al client che si arrangiera' a fare il resto.
+Dobbiamo pero' fare i conti con un problema: potrebbe esserci l'echo
+dei caratteri, questo complica le cose.. potrebbe infatti tornare
+frammentato in piu write(2). L'unica soluzione "veloce" consiste nel
+nascondere qualsiasi output all'utente fino a quando non siamo sicuri
+di aver nascosto l'echo (e l'output) dei nostri comandi.
+..per nascondere l'output occorrera' non scrivere nulla, mettendo edx a 0
+al primo stop, ricordandosi di fixare eax al secondo con il vecchio valore
+di edx.
+Tutto questo in <ptrace/onelove.c>, have fun!
+ 
+
+
+0x5 Bindshell, the last stage of delirium
+------------------------------------------------------------------------
+
+Attraverso qualche echo -ne rediretto possiamo uppare qualsiasi tipo 
+di file.. anche un piccolo eseguibile di 268 byte, sufficiente per una 
+bindshell:) Il sorgente si trova in <ptrace/bind.s>, vediamo come compilarlo
+ed ottimizzarne la dimensione:
+
+# compiliamo..
+gate$ gcc -Wall -s -nostartfiles -nostdlib bind.s -o bind
+# quanti byte?
+gate$ wc -c bind
+    496 bind
+# bene, rimuoviamo ora tutto il non essenziale dall'eseguibile
+gate$ sstrip bind
+# quanti byte?
+gate$ wc -c bind
+    268 bind
+gate$
+
+Ora che abbiamo il nostro piccolo ELF, non ci resta che trasformarlo
+in un unico echo utilizzando <ptrace/ech.c>: <ptrace/cmdfiles/_bindshell>
+
+
+
+0x6 References
+------------------------------------------------------------------------
+
+   [1] Man page of ptrace(2)
+   [2] strace(2) sources
+   [3] http://www.phrack.org/phrack/59/p59-0x0c.txt
+   [4] http://www.linuxgazette.com/issue81/sandeep.html
+   [5] http://linuxassembly.org
+   [6] http://www.lxhp.in-berlin.de/lhpsyscal.html
+   [7] http://www.muppetlabs.com/~breadbox/software/tiny/teensy.html
+
+
+
+------------------------------------------------------------------------
+								     EOF
+
+
+
+-[ WEB ]----------------------------------------------------------------------
+
+        http://www.bfi.cx
+	http://www.s0ftpj.org/bfi/
+
+
+-[ E-MAiL ]-------------------------------------------------------------------
+
+	bfi@s0ftpj.org
+
+
+-[ PGP ]----------------------------------------------------------------------
+
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+Version: 2.6.3i
+mQENAzZsSu8AAAEIAM5FrActPz32W1AbxJ/LDG7bB371rhB1aG7/AzDEkXH67nni
+DrMRyP+0u4tCTGizOGof0s/YDm2hH4jh+aGO9djJBzIEU8p1dvY677uw6oVCM374
+nkjbyDjvBeuJVooKo+J6yGZuUq7jVgBKsR0uklfe5/0TUXsVva9b1pBfxqynK5OO
+lQGJuq7g79jTSTqsa0mbFFxAlFq5GZmL+fnZdjWGI0c2pZrz+Tdj2+Ic3dl9dWax
+iuy9Bp4Bq+H0mpCmnvwTMVdS2c+99s9unfnbzGvO6KqiwZzIWU9pQeK+v7W6vPa3
+TbGHwwH4iaAWQH0mm7v+KdpMzqUPucgvfugfx+kABRO0FUJmSTk4IDxiZmk5OEB1
+c2EubmV0PokBFQMFEDZsSu+5yC9+6B/H6QEBb6EIAMRP40T7m4Y1arNkj5enWC/b
+a6M4oog42xr9UHOd8X2cOBBNB8qTe+dhBIhPX0fDJnnCr0WuEQ+eiw0YHJKyk5ql
+GB/UkRH/hR4IpA0alUUjEYjTqL5HZmW9phMA9xiTAqoNhmXaIh7MVaYmcxhXwoOo
+WYOaYoklxxA5qZxOwIXRxlmaN48SKsQuPrSrHwTdKxd+qB7QDU83h8nQ7dB4MAse
+gDvMUdspekxAX8XBikXLvVuT0ai4xd8o8owWNR5fQAsNkbrdjOUWrOs0dbFx2K9J
+l3XqeKl3XEgLvVG8JyhloKl65h9rUyw6Ek5hvb5ROuyS/lAGGWvxv2YJrN8ABLo=
+=o7CG
+-----END PGP PUBLIC KEY BLOCK-----
+
+
+==============================================================================
+-----------------------------------[ EOF ]------------------------------------
+==============================================================================

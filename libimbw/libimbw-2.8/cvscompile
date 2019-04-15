@@ -1,0 +1,21 @@
+#!/bin/sh
+
+echo "cleaning up output/conf files..."
+make clean 2> /dev/null
+rm -f include/config.h.in
+rm -f configure
+rm -f Makefile
+rm -f src/Makefile
+
+echo "running autoheader..."
+autoheader
+echo "running autoconf..."
+autoconf
+
+VERSION=`cat VERSION`
+LIBIMBW_VER="#define LIBIMBW_VER \"$VERSION\""
+sed s"/@LIBIMBW_VER@/$LIBIMBW_VER/" include/imbw.h.in > include/imbw.h
+
+
+./configure --enable-debug
+make

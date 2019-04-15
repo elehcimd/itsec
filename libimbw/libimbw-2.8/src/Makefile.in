@@ -1,0 +1,29 @@
+SOURCES   = @SOURCES@
+LIBNAME   = @LIBNAME@
+AR        = @AR@
+CC        = @CC@
+CFLAGS    = @CFLAGS@
+CPPFLAGS  = @CPPFLAGS@
+DEFINES   = @DEFS@
+INCLS     = @INCLS@
+
+DESTS     = $(SOURCES:.c=.o)
+
+.c.o:
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(DEFINES) $(INCLS) -c $< -o $@
+	indent -orig $<
+
+
+all: libimbw
+
+
+libimbw:   $(DESTS)
+	@rm -f *c~
+	$(AR) -cr $(LIBNAME).a $(DESTS)
+
+clean:
+	rm -f *.[oa] *.c~
+
+distclean: clean
+	rm -f Makefile
+

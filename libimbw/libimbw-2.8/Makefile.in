@@ -1,0 +1,40 @@
+PLUGINS  = @PLUGINS@
+LIBNAME  = @LIBNAME@
+VERSION  = @VERSION@
+
+all: imbw
+
+
+imbw:
+	make -C src
+	./mkinstalldirs libimbw
+
+	cp src/imbw.a include/imbw.h ./libimbw-config libimbw
+	@echo
+	@echo "  @SB@libimbw/ contains everything you'll need:@EB@"
+	@echo
+	@ls -1 libimbw/
+	@echo
+	@echo '  @SB@have fun!@EB@'
+	@echo
+
+distro: distclean
+	./shtool fixperm ./
+	cd .. && tar cvfz lib$(LIBNAME)-$(VERSION).tar.gz \
+	./lib$(LIBNAME)-$(VERSION) --exclude CVS && \
+	mv lib$(LIBNAME)-$(VERSION).tar.gz ./lib$(LIBNAME)-$(VERSION)/ && \
+	cd lib$(LIBNAME)-$(VERSION)
+
+
+distclean: clean
+	make distclean -C src
+
+	rm -f config.cache config.status libimbw-checkv libimbw-config include/config.h 
+	rm -f lib$(LIBNAME)-*.tar.gz Makefile
+	rm -f *.log
+
+clean:
+	make clean -C src
+	make clean -C itools
+	rm -rf libimbw
+

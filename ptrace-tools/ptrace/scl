@@ -1,0 +1,17 @@
+#!/bin/sh
+# $Id: scl,v 0.2 2002/09/20 6:09:06 xenion Exp $
+
+I="/usr/include/asm/unistd.h"
+O="scl.h"
+
+echo -ne "working.. "
+echo > $O
+echo -e "struct {\n  char *name;\n  int number;\n} SYSCALL_LIST[] = {" >> $O
+sed -n '/__NR_.[a-z][a-z]*.*[0-9]/p' $I | \
+sed s'/\/\*.*\*\///' | tr -s "[\11]" "[ ]" | sed s'/#define __NR_/{"/' | \
+sed s'/ /",/' | awk 'BEGIN { i=-1; } { i++; if (i==2) {print ""; \
+ i=0}; if (i==0) printf "    ";printf("%s},",$0); } \
+END { printf "{\"nothing\", -1}\n};\n\n/*\n * EOF\n */"}' >> $O
+echo done. \($O created\)
+
+#EOF

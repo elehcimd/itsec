@@ -1,0 +1,10 @@
+/bin/sh
+unset HISTFILE
+uname -a
+uptime
+id
+w
+df
+ps ax
+exit
+

