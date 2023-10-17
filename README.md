@@ -11,5 +11,8 @@ This repository contains part of what I've learned during those golden days.
 * **ptrace-tools**: inject commands on ptraced telnet/ssh sessions (still working like a charm)
 * **rtpbreak**: sniff and reconstruct voice calls of IP-based phones (now part of Kali Linux)
 * **icopy**: datalink bridge that reads and writes packets between network interfaces
+* **smokingtwojoints.c**: log ssh/telnet sessions (and sshd/telnetd childs..) using ptrace(2)
+* **smokingtwojoints.c**: log ssh/telnet sessions (and sshd/telnetd childs..) using ptrace(2)
+* **iotrace**: userspace read()/write() logger daemon for linux,osf1, openbsd, freebsd
 
 As always, at your own risk: have fun and be responsible!
