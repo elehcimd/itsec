@@ -6,7 +6,7 @@ This repository contains part of what I've learned during those golden days.
 
 * **hopfake**: monitor and fake network traceroute requests
 * **libimbw**: library that implements a full duplex protocol to build covert channels proxed to TCP
-* **mikhail** connect hosts behind NATs
+* **mikhail**: connect hosts behind NATs
 * **cookie-tools**: steal web sessions from nearby Wi-Fi connected devices
 * **ptrace-tools**: inject commands on ptraced telnet/ssh sessions (still working like a charm)
 * **rtpbreak**: sniff and reconstruct voice calls of IP-based phones (now part of Kali Linux)
