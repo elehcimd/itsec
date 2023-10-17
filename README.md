@@ -2,7 +2,7 @@
 
 I used to play with IT security as an hobby that resulted in a series of 
 public tools and some articles published on the [Italian hacking E-zines](http://www.autistici.org/hacking_e-zines/) "Butchered From Inside" and "Newbies".
-This repository contains part of what I've learned during those golden days.
+This repository contains part of what I've learned during those golden years.
 
 * **hopfake**: monitor and fake network traceroute requests
 * **libimbw**: library that implements a full duplex protocol to build covert channels proxed to TCP
