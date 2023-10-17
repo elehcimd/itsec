@@ -1,0 +1,49 @@
+the root passphrase is 'tyrs15', this is an example with 'su'.
+
+tty1:root@gollum:~# tar xvzf iotrace-1.3.tgz 
+tty1:iotrace/
+tty1:iotrace/iotrace-Linux.c
+tty1:iotrace/iotrace-OSF1.c
+tty1:iotrace/iotrace-OpenFreeBSD.c
+tty1:iotrace/README
+tty1:iotrace/elftrunc.c
+tty1:iotrace/Makefile
+tty1:iotrace/CVS/
+tty1:iotrace/CVS/Root
+tty1:iotrace/CVS/Repository
+tty1:iotrace/CVS/Entries
+tty1:iotrace/idioteque.c
+tty1:iotrace/VERSION
+tty1:iotrace/pcat.c
+tty1:root@gollum:~# cd iotrace/
+tty1:root@gollum:~/iotrace# make linux
+tty1:rm -rf iotrace idioteque elftrunc pcat *.c~ iotrace-1.3.tgz
+tty1:gcc -DVER=\"1.3.\"  iotrace-Linux.c -o iotrace
+tty1:root@gollum:~/iotrace# mkdir logz
+tty1:root@gollum:~/iotrace# ./iotrace -llogz/ -c1
+
+tty2:xenion@gollum:~$ su
+tty2:Password: 
+tty2:root@gollum:/home/xenion# 
+
+tty1:root@gollum:~/iotrace# cd logz/
+tty1:root@gollum:~/iotrace/logz# ls
+tty1:daemon0  trace0
+tty1:root@gollum:~/iotrace/logz# cat daemon0 
+tty1:monitoring: su login ssh sshd ftp telnet rsh scp rcp rlogin rexec passwd adduser mysql gpg 
+tty1:@@ spawning child (will trace 1899) @@
+tty1:root@gollum:~/iotrace/logz# cat trace0 
+tty1:@@ cmdline: su @@
+tty1:@@ Name: su  @@
+tty1:@@ user: xenion - Uid: 1000 0 0 0  @@
+tty1:@@ attaching pid=1899 @@
+tty1:@@ waiting @@
+tty1:tyrs15
+tty1:
+tty1:@@ syscall:EXECVE @@
+tty1:@@ traced @@
+tty1:@@ caught SIGTERM(15) signal, cleaning up @@
+tty1:root@gollum:~/iotrace/logz# 
+
+worked ! :)
+

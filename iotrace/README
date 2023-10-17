@@ -1,0 +1,153 @@
+$Id: README,v 1.8 2004/12/25 14:11:56 xenion Exp $
+
+Copyright (c) 2004 Dallachiesa Michele <michele.dallachiesa at poste.it>
+
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification are permitted.
+
+THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+SUCH DAMAGE.
+
+-------------------------------------------------------------------------
+
+iotrace is an userspace read()/write() logger daemon for linux,osf1,
+openbsd, freebsd. worked (with satisfaction) on: su, ssh, ftp, telnet,
+rsh, scp, rlogin, rexec, passwd, adduser, mysql, gpg. it works using
+ptrace(2) & friends. 
+
+This is not an exploit, you must run iotrace as root in order to trace
+the processes of other users.
+
+
+** If the OS you're interested in is not yet supported, write the port
+** and contact me ! if you've troubles compiling it, contact me! if you 
+** find bugs, contact me!
+
+
+How it works
+~~~~~~~~~~~~
+When su,ssh,.. is executed iotrace traces it logging the I/O 
+through read(2)/write(2) (not recvfrom!) for n seconds, only
+if the count of read/written bytes is less than <count> bytes. 
+This restriction has some advantages: less noise. 
+
+
+Supported OS
+~~~~~~~~~~~~
+- Linux
+- OSF1 
+- OpenBSD 
+- FreeBSD
+
+Tested on:
+
+- Debian Woody (3.0), Linux 2.4.22
+- Debian Woody (3.0), Linux 2.6.3
+- Red Hat Linux release 5.2 (Apollo), Linux 2.0.36
+- Red Hat Linux release 7.2 (Enigma), Linux 2.4.7-10
+- OSF1 v4.0
+- OpenBSD 3.4
+- FreeBSD 4.5-STABLE (compiles but not tested)
+
+!! DOES NOT WORK IF SUCKIT IS RUNNING !! SUCKIT FUCKS PTRACE !!
+
+
+iotrace, diet libc and upx
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+'make tiny-linux' produces the iotrace executable:
+- statically linked against diet libc
+- stripped
+- compressed (if upx is found)
+before packing iotrace is ~ 27k, after ~ 16k :)
+
+WARNING: you must use a diet libc version >= 0.25
+         (otherwise ptrace(2) will not work.. a little bug.)
+
+
+Running iotrace on a rootkitted system 
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+1) With Adore works well.
+2) With All userspace rootkits works well. (Linux&c)
+3) With SuckIT doesn't work well: the system may Oops, freezing
+   iotrace and the ptraced process (not the whole system).
+   (This is clearly a suckit problem)
+
+You can't test iotrace if your telnet/ssh/.. process is hidden
+because (probably) it's hidden to iotrace too!
+
+
+Running iotrace on Linux
+~~~~~~~~~~~~~~~~~~~~~~~~
+ptrace(2) is used. Every traced process has its own tracing child.
+(there's a way to avoid this?)
+
+
+Running iotrace on OSF1
+~~~~~~~~~~~~~~~~~~~~~~~
+all through ioctl() calls, /proc required. Only 1 tracing process.
+
+
+Running iotrace on OpenBSD,FreeBSD
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ktrace(2) is used (noise removed when the trace ends). Only 1
+tracing process.
+
+
+idioteque
+~~~~~~~~~
+sniffs r/w data of a specified process. You can select all or
+only a subset of fds. Works only on linux.
+
+
+pcat
+~~~~
+breaks a logfile into possible passwords (useful with john!)
+example:
+
+xenion@gollum:~/cvs/locale/iotrace$ cat mylog 
+passòword
+xenion@gollum:~/cvs/locale/iotrace$ ./pcat mylog | sort | uniq
+a
+as
+ass
+d
+o
+or
+ord
+p
+pa
+pas
+pass
+r
+rd
+s
+ss
+xenion@gollum:~/cvs/locale/iotrace$ 
+
+
+Thanks
+~~~~~~
+Marco Nesler aka sat -- (help and support for osf1 porting)
+
+
+Links
+~~~~~
+http://upx.sourceforge.net/ the Ultimate Packer for eXecutables
+http://www.fefe.de/dietlibc/ a libc optimized for small size 
+
+
+HAVE FUN!
+.x
+
+
