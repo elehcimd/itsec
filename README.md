@@ -15,5 +15,6 @@ This repository contains part of what I've learned during those golden years.
 * **iotrace**: userspace read()/write() logger daemon for linux,osf1, openbsd, freebsd
 * **khideee.c**: hide tasks to KSTAT
 * **optimistic**: self-modifying ELF executables
+* **goons.sh**: Script to automate DNS, SMTP, HTTP scans on hostname lists retrieved from google
 
 As always, at your own risk: have fun and be responsible!
