@@ -14,5 +14,6 @@ This repository contains part of what I've learned during those golden years.
 * **smokingtwojoints.c**: log ssh/telnet sessions (and sshd/telnetd childs..) using ptrace(2)
 * **iotrace**: userspace read()/write() logger daemon for linux,osf1, openbsd, freebsd
 * **khideee.c**: hide tasks to KSTAT
+* **optimistic**: self-modifying ELF executables
 
 As always, at your own risk: have fun and be responsible!
